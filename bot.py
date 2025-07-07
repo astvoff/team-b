@@ -1,8 +1,10 @@
 import os
 import logging
+import asyncio
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, JobQueue
 from datetime import time
+from zoneinfo import ZoneInfo
 
 TOKEN = os.environ.get('TOKEN')
 CHAT_ID = int(os.environ.get('CHAT_ID'))
@@ -20,7 +22,9 @@ async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=context.job.data['chat_id'], text=message)
 
 async def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+    # створюємо JobQueue з часовою зоною
+    kyiv_zone = ZoneInfo("Europe/Kyiv")
+    app = ApplicationBuilder().token(TOKEN).timezone(kyiv_zone).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
@@ -41,8 +45,7 @@ async def main():
         app.job_queue.run_daily(
             send_reminder,
             reminder['time'],
-            data={"chat_id": CHAT_ID, "text": reminder['text']},
-            timezone="Europe/Kyiv"
+            data={"chat_id": CHAT_ID, "text": reminder['text']}
         )
 
     await app.initialize()
@@ -51,5 +54,4 @@ async def main():
     await app.updater.idle()
 
 if __name__ == '__main__':
-    import asyncio
     asyncio.run(main())

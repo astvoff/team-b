@@ -1,7 +1,7 @@
 import os
-from telegram import Bot
-from telegram.ext import Updater, CommandHandler, CallbackContext
 import logging
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from datetime import time
 
 TOKEN = os.environ.get('TOKEN')
@@ -9,26 +9,21 @@ CHAT_ID = int(os.environ.get('CHAT_ID'))
 
 logging.basicConfig(level=logging.INFO)
 
-def start(update, context: CallbackContext):
-    update.message.reply_text('Привіт, я корпоративний бот магазину. Використовуйте /help для команд.')
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text('Привіт, я корпоративний бот магазину. Використовуйте /help для команд.')
 
-def help_command(update, context: CallbackContext):
-    update.message.reply_text('Доступні команди:\n/start - запуск\n/help - список команд')
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text('Доступні команди:\n/start - запуск\n/help - список команд')
 
-def send_reminder(context: CallbackContext):
-    message = context.job.context['text']
-    chat_id = context.job.context['chat_id']
-    context.bot.send_message(chat_id=chat_id, text=message)
+async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
+    message = context.job.data['text']
+    await context.bot.send_message(chat_id=context.job.data['chat_id'], text=message)
 
-def main():
-    bot = Bot(TOKEN)
-    updater = Updater(bot=bot, use_context=True)
-    dp = updater.dispatcher
+async def main():
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("help", help_command))
-
-    job_queue = updater.job_queue
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
 
     reminders = [
         {"time": time(10, 0), "text": "Не забудь відкрити касу ТОВ 👻"},
@@ -43,14 +38,18 @@ def main():
     ]
 
     for reminder in reminders:
-        job_queue.run_daily(
+        app.job_queue.run_daily(
             send_reminder,
             reminder['time'],
-            context={"chat_id": CHAT_ID, "text": reminder['text']}
+            data={"chat_id": CHAT_ID, "text": reminder['text']},
+            timezone="Europe/Kyiv"
         )
 
-    updater.start_polling()
-    updater.idle()
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    await app.updater.idle()
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main())

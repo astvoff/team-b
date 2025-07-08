@@ -56,6 +56,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("Виберіть кількість працівників на зміні:", reply_markup=InlineKeyboardMarkup(keyboard))
 
+async def choose_workers(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    buttons = [
+        [KeyboardButton("6"), KeyboardButton("7")],
+        [KeyboardButton("8"), KeyboardButton("9")],
+        [KeyboardButton("⬅️ Назад")]
+    ]
+    await update.message.reply_text(
+        "Скільки працівників на зміні?",
+        reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=True)
+    )
 
 async def select_workers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query

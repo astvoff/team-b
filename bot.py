@@ -83,6 +83,15 @@ async def select_workers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+async def choose_block(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    count = context.user_data.get('worker_count', 6)
+    buttons = [[KeyboardButton(str(i)) for i in range(1, count + 1)]]
+    buttons.append([KeyboardButton("⬅️ Назад")])
+    
+    await update.message.reply_text(
+        "Оберіть свій блок завдань:",
+        reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=True)
+    )
 
 async def select_block(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query

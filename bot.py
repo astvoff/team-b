@@ -148,5 +148,6 @@ async def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_done))
     await app.run_polling()
 
-import asyncio
-asyncio.run(main())
+if __name__ == '__main__':
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(main())

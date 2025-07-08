@@ -28,7 +28,7 @@ reminders = {
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Бот працює по Києву 🕰️")
+    await update.message.reply_text("Бот працює 💪")
 
 # Щохвилинна перевірка часу
 async def check_reminders(context: ContextTypes.DEFAULT_TYPE):

@@ -4,41 +4,36 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 
 TOKEN = os.environ.get('TOKEN')
 
-# Прикладова структура завдань по блоках
+# Завдання по блоках
 TASKS = {
     6: {
-        1: ["Завдання 1.1", "Завдання 1.2"],
-        2: ["Завдання 2.1", "Завдання 2.2"],
-        3: ["Завдання 3.1", "Завдання 3.2"],
-        4: ["Завдання 4.1", "Завдання 4.2"],
-        5: ["Завдання 5.1", "Завдання 5.2"],
-        6: ["Завдання 6.1", "Завдання 6.2"],
+        1: ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
+        2: ["Замовлення сайту", "Перевірка переміщень", "Запити Сайту"],
+        3: ["Замовлення наші", "Стіна аксесуарів", "Прийомка товару"],
+        4: ["OLX", "Стани техніка і тел.", "Прийомка товару"],
+        5: ["Цінники", "Зарядка телефонів", "Звіт-витрати", "Прийомка товару"],
+        6: ["Каса", 'Запити "Нова Техніка"', 'Запити "Акси"'],
     },
     7: {
-        1: ["Завдання 1.1", "Завдання 1.2"],
-        7: ["Завдання 7.1", "Завдання 7.2"],
-    },
-    8: {
-        1: ["Завдання 1.1", "Завдання 1.2"],
-        8: ["Завдання 8.1", "Завдання 8.2"],
-    },
-    9: {
-        1: ["Завдання 1.1", "Завдання 1.2"],
-        9: ["Завдання 9.1", "Завдання 9.2"],
-    },
+        1: ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
+        2: ["Замовлення сайту", "Перевірка переміщень", "Запити Сайту"],
+        3: ["Замовлення наші", "Стіна аксесуарів", "Прийомка товару"],
+        4: ["OLX", "Стани техніка і тел.", "Прийомка товару"],
+        5: ["Цінники", "Зарядка телефонів", "Прийомка товару"],
+        6: ["Каса", 'Запити "Акси"'],
+        7: ["Звіт-витрати", 'Запити "Нова Техніка"', "Прийомка товару"],
+    }
 }
 
-# Запуск /start
+# Старт
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("6 працівників", callback_data="workers_6")],
         [InlineKeyboardButton("7 працівників", callback_data="workers_7")],
-        [InlineKeyboardButton("8 працівників", callback_data="workers_8")],
-        [InlineKeyboardButton("9 працівників", callback_data="workers_9")],
     ]
     await update.message.reply_text("Виберіть кількість працівників на зміні:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# Обробка вибору кількості працівників
+# Вибір кількості працівників
 async def select_workers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -46,7 +41,6 @@ async def select_workers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     workers = int(query.data.split("_")[1])
     context.user_data["workers"] = workers
 
-    # Генеруємо кнопки для вибору блоку
     keyboard = []
     for block in range(1, workers + 1):
         keyboard.append([InlineKeyboardButton(f"Блок {block}", callback_data=f"block_{block}")])
@@ -56,27 +50,53 @@ async def select_workers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# Обробка вибору блоку
+# Вибір блоку
 async def select_block(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     block = int(query.data.split("_")[1])
+    context.user_data["block"] = block
     workers = context.user_data.get("workers", 6)
 
     tasks = TASKS.get(workers, {}).get(block, ["Немає завдань для цього блоку"])
 
+    # Відправляємо перелік завдань
     await query.edit_message_text(
         text=f"Ваші завдання для блоку {block}:\n" + "\n".join(f"🔹 {task}" for task in tasks)
     )
 
-# Запуск бота
+    # Запитуємо, з чого почне
+    keyboard = []
+    for idx, task in enumerate(tasks, start=1):
+        keyboard.append([InlineKeyboardButton(f"{task}", callback_data=f"starttask_{idx}")])
+
+    await query.message.reply_text(
+        "З якого завдання ти почнеш?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+# Обробка вибору завдання
+async def start_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    task_idx = int(query.data.split("_")[1])
+    workers = context.user_data.get("workers", 6)
+    block = context.user_data.get("block", 1)
+
+    task = TASKS.get(workers, {}).get(block, ["Немає завдань"])[task_idx - 1]
+
+    await query.edit_message_text(text=f"Добре, починай із завдання: ✅ {task}")
+
+# Основний запуск
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(select_workers, pattern=r"^workers_\d+$"))
     app.add_handler(CallbackQueryHandler(select_block, pattern=r"^block_\d+$"))
+    app.add_handler(CallbackQueryHandler(start_task, pattern=r"^starttask_\d+$"))
 
     print("Бот запущено.")
     app.run_polling()

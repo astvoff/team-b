@@ -1,18 +1,18 @@
 import os
 import logging
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, JobQueue
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from datetime import time
 from zoneinfo import ZoneInfo
 
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.environ.get('TOKEN')
-CHAT_ID = int(os.environ.get('CHAT_ID'))  # з Environment Variables
+CHAT_ID = int(os.environ.get('CHAT_ID'))
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Бот працює. Я готовий надсилати нагадування!")
+    await update.message.reply_text("Бот працює!")
 
 # Функція для надсилання нагадувань
 async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
@@ -20,14 +20,13 @@ async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=CHAT_ID, text=message)
 
 def main():
-    # встановлюємо часову зону
-    kyiv_timezone = ZoneInfo("Europe/Kyiv")
-
-    # створюємо застосунок з часовою зоною
-    app = ApplicationBuilder().token(TOKEN).timezone(kyiv_timezone).build()
+    app = ApplicationBuilder().token(TOKEN).build()
 
     # додаємо обробник /start
     app.add_handler(CommandHandler("start", start))
+
+    # встановлюємо часову зону Києва
+    kyiv_timezone = ZoneInfo("Europe/Kyiv")
 
     # перелік нагадувань
     reminders = [
@@ -42,12 +41,13 @@ def main():
         {"time": time(19, 30), "text": "Що там OLX 👀 Перевір повідомлення 📩"},
     ]
 
-    # додаємо нагадування в JobQueue
+    # додаємо нагадування у job_queue з часовою зоною
     for reminder in reminders:
         app.job_queue.run_daily(
             send_reminder,
             reminder['time'],
-            data={"text": reminder['text']}
+            data={"text": reminder['text']},
+            timezone=kyiv_timezone
         )
 
     logging.info("Бот із нагадуваннями запущено.")

@@ -1,15 +1,8 @@
-import logging
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, constants
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+import os
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-logging.basicConfig(level=logging.INFO)
-TOKEN = "7623138223:AAFbvuzI9GxfGw8nKULGBhTzJWKOiOMxF4g"
+TOKEN = os.environ.get('TOKEN')
 
 # Завдання по блоках
 TASKS = {
@@ -17,116 +10,178 @@ TASKS = {
         1: ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
         2: ["Замовлення сайту", "Перевірка переміщень", "Запити Сайту"],
         3: ["Замовлення наші", "Стіна аксесуарів", "Прийомка товару"],
-        4: ["OLХ", "Стани техніка і тел.", "Прийомка товару"],
+        4: ["OLX", "Стани техніка і тел.", "Прийомка товару"],
         5: ["Цінники", "Зарядка телефонів", "Звіт-витрати", "Прийомка товару"],
-        6: ["Каса", "Запити 'Нова Техніка'", "Запити 'Акси'"],
+        6: ["Каса", 'Запити "Нова Техніка"', 'Запити "Акси"'],
     },
     7: {
         1: ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
         2: ["Замовлення сайту", "Перевірка переміщень", "Запити Сайту"],
         3: ["Замовлення наші", "Стіна аксесуарів", "Прийомка товару"],
-        4: ["OLХ", "Стани техніка і тел.", "Прийомка товару"],
+        4: ["OLX", "Стани техніка і тел.", "Прийомка товару"],
         5: ["Цінники", "Зарядка телефонів", "Прийомка товару"],
-        6: ["Каса", "Запити 'Акси'"],
-        7: ["Звіт-витрати", "Запити 'Нова Техніка'", "Прийомка товару"],
+        6: ["Каса", 'Запити "Акси"'],
+        7: ["Звіт-витрати", 'Запити "Нова Техніка"', "Прийомка товару"],
     },
     8: {
         1: ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
         2: ["Замовлення сайту", "Запити Сайту"],
         3: ["Замовлення наші", "Прийомка товару"],
-        4: ["OLХ", "Стани техніка і тел.", "Прийомка товару"],
+        4: ["OLX", "Стани техніка і тел.", "Прийомка товару"],
         5: ["Цінники", "Зарядка телефонів", "Прийомка товару"],
         6: ["Каса"],
-        7: ["Звіт-витрати", "Запити 'Нова Техніка'", "Прийомка товару"],
-        8: ["Перевірка переміщень", "Стіна аксесуарів", "Запити 'Акси'"],
+        7: ["Звіт-витрати", 'Запити "Нова Техніка"', "Прийомка товару"],
+        8: ["Перевірка переміщень", "Стіна аксесуарів", 'Запити "Акси"'],
     },
     9: {
         1: ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
         2: ["Замовлення сайту", "Запити Сайту"],
         3: ["Замовлення наші", "Прийомка товару"],
-        4: ["OLХ", "Прийомка товару"],
+        4: ["OLX", "Прийомка товару"],
         5: ["Цінники", "Прийомка товару"],
         6: ["Каса"],
-        7: ["Звіт-витрати", "Запити 'Нова Техніка'", "Прийомка товару"],
-        8: ["Перевірка переміщень", "Стіна аксесуарів", "Запити 'Акси'"],
+        7: ["Звіт-витрати", 'Запити "Нова Техніка"', "Прийомка товару"],
+        8: ["Перевірка переміщень", "Стіна аксесуарів", 'Запити "Акси"'],
         9: ["Стани техніка і тел.", "Зарядка телефонів"],
-    }
+    },
 }
 
-# Інструкція
-INSTRUCTION = (
-    "✅ Інструкція:\n\n"
-    "*Чергування:*\n"
-    "- Відкрити зміну ТОВ\n- Звести касу на ранок\n- Перевірити пропущені Binotel\n"
-    "- Ранкове прибирання:\n  1) Протерти скло вітрин\n  2) Вологе прибирання поверхонь\n"
-    "  3) Протерти чохли від пилу\n  4) Прибрати дитячу зону\n  5) Помити підлогу\n\n"
-    "*Підсобка:*\n"
-    "  1) Порядок на стелажах\n  2) Порядок на робочому столі\n"
-    "  3) Порядок в касовій зоні\n  4) Віднести габаритну техніку на склад"
-)
-
-def back_button():
-    return [KeyboardButton("⬅️ Назад")]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    buttons = [[KeyboardButton(str(i)) for i in [6, 7, 8, 9]], back_button()]
-    await update.message.reply_text(
-        "Привіт! Скільки працівників на зміні?",
-        reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+    keyboard = [
+        [InlineKeyboardButton("6 працівників", callback_data="workers_6")],
+        [InlineKeyboardButton("7 працівників", callback_data="workers_7")],
+        [InlineKeyboardButton("8 працівників", callback_data="workers_8")],
+        [InlineKeyboardButton("9 працівників", callback_data="workers_9")],
+    ]
+    await update.message.reply_text("Виберіть кількість працівників на зміні:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def select_workers(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    workers = int(query.data.split("_")[1])
+    context.user_data["workers"] = workers
+
+    keyboard = []
+    for block in range(1, workers + 1):
+        keyboard.append([InlineKeyboardButton(f"Блок {block}", callback_data=f"block_{block}")])
+
+    await query.edit_message_text(
+        text=f"Вибрано {workers} працівників. Тепер виберіть свій блок:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
-    context.user_data.clear()
 
-async def handle_workers(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == "⬅️ Назад":
-        return await start(update, context)
-    if update.message.text.isdigit() and int(update.message.text) in TASKS:
-        count = int(update.message.text)
-        context.user_data['workers'] = count
-        buttons = [[KeyboardButton(str(i)) for i in range(1, count + 1)], back_button()]
-        await update.message.reply_text("Оберіть свій блок завдань:", reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
-    else:
-        await update.message.reply_text("Будь ласка, оберіть кількість працівників (6-9) або натисніть Назад.")
 
-async def handle_blocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == "⬅️ Назад":
-        return await start(update, context)
-    workers = context.user_data.get('workers')
-    if update.message.text.isdigit() and workers and int(update.message.text) in TASKS[workers]:
-        block = int(update.message.text)
-        context.user_data['block'] = block
-        tasks = TASKS[workers][block]
-        buttons = [[KeyboardButton(task)] for task in tasks] + [back_button()]
-        await update.message.reply_text("Виберіть завдання для старту:", reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
-    else:
-        await update.message.reply_text("Будь ласка, оберіть блок або натисніть Назад.")
+async def select_block(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
-async def handle_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == "⬅️ Назад":
-        workers = context.user_data.get('workers')
-        return await handle_workers(update, context) if workers else await start(update, context)
-    await update.message.reply_text(f"Ти обрав завдання: {update.message.text}")
-    await update.message.reply_text(INSTRUCTION, parse_mode=constants.ParseMode.MARKDOWN)
-    buttons = [[KeyboardButton("✅ Виконано")], back_button()]
-    await update.message.reply_text("Після виконання натисни «✅ Виконано»", reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
+    block = int(query.data.split("_")[1])
+    context.user_data["block"] = block
+    workers = context.user_data.get("workers", 6)
 
-async def handle_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == "⬅️ Назад":
-        block = context.user_data.get('block')
-        workers = context.user_data.get('workers')
-        return await handle_blocks(update, context) if block and workers else await start(update, context)
-    if update.message.text == "✅ Виконано":
-        await update.message.reply_text("✅ Завдання відмічено як виконане!")
-        return await start(update, context)
+    tasks = TASKS.get(workers, {}).get(block, ["Немає завдань для цього блоку"])
 
-async def main():
-    app = Application.builder().token(TOKEN).build()
+    await query.edit_message_text(
+        text=f"Ваші завдання для блоку {block}:\n" + "\n".join(f"🔹 {task}" for task in tasks)
+    )
+
+    keyboard = []
+    for idx, task in enumerate(tasks, start=1):
+        keyboard.append([InlineKeyboardButton(task, callback_data=f"starttask_{idx}")])
+
+    await query.message.reply_text(
+        "З якого завдання ти почнеш?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def start_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    task_idx = int(query.data.split("_")[1])
+    workers = context.user_data.get("workers", 6)
+    block = context.user_data.get("block", 1)
+
+    task = TASKS.get(workers, {}).get(block, ["Немає завдань"])[task_idx - 1]
+    context.user_data["current_task"] = task
+
+    keyboard = [
+        [InlineKeyboardButton("✅ Виконано", callback_data="task_done")]
+    ]
+
+    await query.edit_message_text(
+        text=f"Добре, починай із завдання: ✅ {task}\n\nПісля виконання, не забудь відмітити це натиснувши на кнопку.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def task_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    task = context.user_data.get("current_task", "Завдання")
+    await query.edit_message_text(text=f"✅ Завдання '{task}' відмічено як виконане. Гарна робота!")
+
+    # Тут пізніше можна додати запис у Google Таблицю або лог.
+
+
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Regex("^[6-9]$|⬅️ Назад"), handle_workers))
-    app.add_handler(MessageHandler(filters.Regex("^[1-9]$"), handle_blocks))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_tasks))
-    app.add_handler(MessageHandler(filters.Regex("^✅ Виконано$|⬅️ Назад"), handle_done))
-    await app.run_polling()
+    app.add_handler(CallbackQueryHandler(select_workers, pattern=r"^workers_\d+$"))
+    app.add_handler(CallbackQueryHandler(select_block, pattern=r"^block_\d+$"))
+    app.add_handler(CallbackQueryHandler(start_task, pattern=r"^starttask_\d+$"))
+    app.add_handler(CallbackQueryHandler(task_done, pattern=r"^task_done$"))
 
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    print("Бот запущено.")
+    app.run_polling()
+
+
+if __name__ == '__main__':
+    main()
+    
+    async def choose_workers(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    buttons = [
+        [KeyboardButton("6"), KeyboardButton("7")],
+        [KeyboardButton("8"), KeyboardButton("9")],
+        [KeyboardButton("⬅️ Назад")]
+    ]
+    await update.message.reply_text(
+        "Скільки працівників на зміні?",
+        reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=True)
+    )
+    
+    async def choose_block(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    count = context.user_data.get('worker_count', 6)
+    buttons = [[KeyboardButton(str(i)) for i in range(1, count + 1)]]
+    buttons.append([KeyboardButton("⬅️ Назад")])
+    
+    await update.message.reply_text(
+        "Оберіть свій блок завдань:",
+        reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=True)
+    )
+    
+    async def choose_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tasks = ["Завдання 1", "Завдання 2", "Завдання 3"]
+    buttons = [[KeyboardButton(task)] for task in tasks]
+    buttons.append([KeyboardButton("⬅️ Назад")])
+    
+    await update.message.reply_text(
+        "З якого завдання почнемо?",
+        reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=True)
+    )
+    
+    async def handle_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    last_stage = context.user_data.get('last_stage', 'start')
+    if last_stage == 'choose_workers':
+        await choose_workers(update, context)
+    elif last_stage == 'choose_block':
+        await choose_block(update, context)
+    else:
+        await start(update, context)
+    

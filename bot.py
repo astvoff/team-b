@@ -3,7 +3,6 @@ import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from datetime import time
-from zoneinfo import ZoneInfo
 
 logging.basicConfig(level=logging.INFO)
 
@@ -22,13 +21,9 @@ async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # додаємо обробник /start
     app.add_handler(CommandHandler("start", start))
 
-    # встановлюємо часову зону Києва
-    kyiv_timezone = ZoneInfo("Europe/Kyiv")
-
-    # перелік нагадувань
+    # список нагадувань
     reminders = [
         {"time": time(10, 0), "text": "Не забудь відкрити касу ТОВ 👻"},
         {"time": time(10, 15), "text": "Перевір пропущені Binotel за сьогодні та за вчора 📞"},
@@ -41,13 +36,11 @@ def main():
         {"time": time(19, 30), "text": "Що там OLX 👀 Перевір повідомлення 📩"},
     ]
 
-    # додаємо нагадування у job_queue з часовою зоною
     for reminder in reminders:
         app.job_queue.run_daily(
             send_reminder,
             reminder['time'],
             data={"text": reminder['text']},
-            timezone=kyiv_timezone
         )
 
     logging.info("Бот із нагадуваннями запущено.")

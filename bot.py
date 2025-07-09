@@ -50,9 +50,14 @@ TASKS = {
 
 INSTRUCTIONS = {
     "Черговий (-a)": "1) Відкрити зміну...\n2) Звести касу на ранок...",
-    "Замовлення сайту": "1) Перевірити актуальність...",
-    "Цінники": "1) Перевірити всю б/у техніку...",
-    # Додавай інструкції для кожного завдання
+    "Замовлення сайту": "1) Перевірити актуальність, уточнити у менеджера сайта\n2) Всі замовлення мають стікер з № замовлення\n3) Зарядити вживані телефони\n4) Вживані телефони в фірмових коробках\n5) Все відкладено на поличці замовлень\n6) Перевірити закази на складі",
+    "Замовлення наші": "1) Звірити товар факт/база\n2) Проінформувати клієнта про наявність (за потреби)\n3) Поновити резерви (за потреби)\n4) Техніка підписана відповідальним\n5) Зарядити б/у телефони\n6) Неактуальні закази закрити",
+    "OLХ": "1) Відповідати на повідомлення\n2) Перевірити кількість оголошень (більше 45)\n3) Запустити рекламу (7-9 оголошень)\n4) Звірити актуальність цін",
+    "Стани техніка і тел.": "1) На всю б/у техніку та телефони мають стояти актуальні стани\n2) Контролювати проставлення станів після прийняття в Trade-in",
+    "Цінники": "1) Перевірити всю б/у техніку на якість наклеєних цінників\n2) Перевірити якість поклейки цінників на всій техніці (в тому числі і шоурум)\n3) Перевірити наявні переоцінки, та проконтролювати переклейку",
+    "Звіт-витрати": "1) Всі витрати мають бути проведені по базі\n2) Перевірити правильність проведення (правильні статті)\n3) Зробити та скинути файл exel в групу \"Звіти\" з усіма чеками",
+    "Перевірка переміщень": "1) Перевірити переміщення яким більше двох днів (ГО, Склади, містами)\n2) Переглянути переміщення по Одесі між магазинами за минулі дні\n3) Знайти всі переміщення фізично або розібратись чому воно не доїхало на магазин."
+    # Додавай інші за потреби
 }
 
 REMINDER_TIMES = [
@@ -106,7 +111,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if state["step"] == "workers":
         if text == "⬅️ Назад":
-            return await start(update, context)
+            await start(update, context)
+            return
         if text.isdigit() and int(text) in TASKS:
             user_state[user_id] = {"step": "block", "workers": int(text)}
             kb = [[KeyboardButton(str(i))] for i in TASKS[int(text)]]
@@ -122,10 +128,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_state[user_id] = {"step": "workers"}
             kb = [[KeyboardButton(str(i))] for i in range(6, 10)]
             kb.append([KeyboardButton("⬅️ Назад")])
-            return await update.message.reply_text(
+            await update.message.reply_text(
                 "Оберіть кількість працівників на зміні:",
                 reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
             )
+            return
         workers = state["workers"]
         if text in TASKS[workers]:
             user_state[user_id].update({"step": "confirm_block", "block": text})
@@ -140,31 +147,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if state["step"] == "confirm_block":
-    if text == "⬅️ Назад":
-        user_state[user_id]["step"] = "block"
-        workers = user_state[user_id]["workers"]
-        kb = [[KeyboardButton(str(i))] for i in TASKS[workers]]
-        kb.append([KeyboardButton("⬅️ Назад")])
-        return await update.message.reply_text(
-            "Оберіть свій блок:",
-            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-        )
-    # --- Ось тут головна зміна! ---
-    if text.startswith("✅ Так, блок"):
-        user_state[user_id]["step"] = "tasks"
-        user_state[user_id]["done"] = []
-        workers = user_state[user_id]["workers"]
-        block = user_state[user_id]["block"]
-        tasks = TASKS[workers][block]
-        # (нагадування, як у попередньому коді)
-        kb = [[KeyboardButton(task)] for task in tasks]
-        kb.append([KeyboardButton("⬅️ Назад")])
-        kb.append([KeyboardButton("⏹ Завершити робочий день")])
-        await update.message.reply_text(
-            f"Ваші завдання на сьогодні (блок {block}):",
-            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-        )
-    return
+        if text == "⬅️ Назад":
+            user_state[user_id]["step"] = "block"
+            workers = user_state[user_id]["workers"]
+            kb = [[KeyboardButton(str(i))] for i in TASKS[workers]]
+            kb.append([KeyboardButton("⬅️ Назад")])
+            await update.message.reply_text(
+                "Оберіть свій блок:",
+                reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+            )
+            return
+        if text.startswith("✅ Так, блок"):
+            user_state[user_id]["step"] = "tasks"
+            user_state[user_id]["done"] = []
+            workers = user_state[user_id]["workers"]
+            block = user_state[user_id]["block"]
+            tasks = TASKS[workers][block]
             # --- Нагадування ---
             if "Черговий (-a)" in tasks:
                 now = datetime.datetime.now(KYIV_TZ)
@@ -187,7 +185,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Ваші завдання на сьогодні (блок {block}):",
                 reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
             )
-        return
+            return
 
     if state["step"] == "tasks":
         if text == "⬅️ Назад":

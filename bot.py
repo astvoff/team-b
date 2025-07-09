@@ -1,11 +1,8 @@
-# telegram_bot_v2.py
-
 import os
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 TOKEN = os.environ.get("TOKEN")
-
 user_state = {}
 
 TASKS = {
@@ -51,7 +48,10 @@ TASKS = {
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [[KeyboardButton(str(i))] for i in range(6, 10)]
-    await update.message.reply_text("Оберіть кількість працівників на зміні:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    await update.message.reply_text(
+        "Оберіть кількість працівників на зміні:",
+        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+    )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -59,7 +59,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text.isdigit() and int(text) in TASKS:
         user_state[user_id] = {"workers": int(text)}
         kb = [[KeyboardButton(str(i))] for i in TASKS[int(text)]]
-        await update.message.reply_text("Оберіть свій блок:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+        await update.message.reply_text(
+            "Оберіть свій блок:",
+            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+        )
     elif user_id in user_state and "workers" in user_state[user_id]:
         workers = user_state[user_id]["workers"]
         if text in TASKS[workers]:

@@ -1,6 +1,6 @@
 import os
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 import datetime
 import pytz
 
@@ -52,7 +52,7 @@ INSTRUCTIONS = {
     "Черговий (-a)": "1) Відкрити зміну...\n2) Звести касу на ранок...",
     "Замовлення сайту": "1) Перевірити актуальність...",
     "Цінники": "1) Перевірити всю б/у техніку...",
-    # та інші інструкції
+    # Додавай інструкції для кожного завдання
 }
 
 REMINDER_TIMES = [
@@ -73,10 +73,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = context.job.chat_id
+    text = context.job.data
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("Готово", callback_data=f"done:{text}")]])
     await context.bot.send_message(
-        chat_id=context.job.chat_id,
-        text=context.job.data
+        chat_id=chat_id,
+        text=text,
+        reply_markup=kb
     )
+
+async def reminder_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    reminder_text = query.data.replace("done:", "")
+    await query.edit_message_text(f"✅ Виконано: {reminder_text}")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -145,7 +155,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             workers = user_state[user_id]["workers"]
             block = user_state[user_id]["block"]
             tasks = TASKS[workers][block]
-            # --- Додаємо нагадування ---
+            # --- Нагадування ---
             if "Черговий (-a)" in tasks:
                 now = datetime.datetime.now(KYIV_TZ)
                 for msg, times in REMINDER_TIMES:
@@ -153,16 +163,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         h, m = map(int, t.split(":"))
                         target = now.replace(hour=h, minute=m, second=0, microsecond=0)
                         if target < now:
-                            # Якщо вже минуло, відправляємо одразу!
-                            context.application.create_task(
-                                context.bot.send_message(chat_id=user_id, text=msg)
-                            )
+                            # Відправляємо одразу, якщо вже минуло
+                            await send_reminder(type("obj", (), {"job": type("obj", (), {"chat_id": user_id, "data": msg})(), "bot": context.bot}))
                         else:
                             delay = (target - now).total_seconds()
                             context.application.job_queue.run_once(
                                 send_reminder, delay, chat_id=user_id, data=msg
                             )
-            # --- Меню завдань ---
             kb = [[KeyboardButton(task)] for task in tasks]
             kb.append([KeyboardButton("⬅️ Назад")])
             kb.append([KeyboardButton("⏹ Завершити робочий день")])
@@ -196,4 +203,5 @@ if __name__ == "__main__":
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    app.add_handler(CallbackQueryHandler(reminder_done, pattern="^done:"))
     app.run_polling()

@@ -1,30 +1,55 @@
 import os
-from datetime import datetime, timedelta
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 TOKEN = os.environ.get("TOKEN")
 user_state = {}
 
+# Завдання по кількості працівників на зміні
 TASKS = {
     6: {
         "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
         "2": ["Замовлення сайту", "Перевірка переміщень", "Запити Сайту"],
+        "3": ["Замовлення наші", "Стіна аксесуарів", "Прийомка товару"],
+        "4": ["OLХ", "Стани техніка і тел.", "Прийомка товару"],
+        "5": ["Цінники", "Зарядка телефонів", "Звіт-витрати", "Прийомка товару"],
+        "6": ["Каса", "Запити \"Нова Техніка\"", "Запити \"Акси\""]
     },
-}
-
-REMINDERS = {
-    "Черговий (-a)": [
-        {"delay_sec": 10, "text": "Тестове нагадування для Чергового!"},
-    ],
-    "Замовлення сайту": [
-        {"delay_sec": 10, "text": "Тестове нагадування для Замовлення сайту!"},
-    ],
+    7: {
+        "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
+        "2": ["Замовлення сайту", "Перевірка переміщень", "Запити Сайту"],
+        "3": ["Замовлення наші", "Стіна аксесуарів", "Прийомка товару"],
+        "4": ["OLХ", "Стани техніка і тел.", "Прийомка товару"],
+        "5": ["Цінники", "Зарядка телефонів", "Прийомка товару"],
+        "6": ["Каса", "Запити \"Акси\""],
+        "7": ["Звіт-витрати", "Запити \"Нова Техніка\"", "Прийомка товару"]
+    },
+    8: {
+        "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
+        "2": ["Замовлення сайту", "Запити Сайту"],
+        "3": ["Замовлення наші", "Прийомка товару"],
+        "4": ["OLХ", "Стани техніка і тел.", "Прийомка товару"],
+        "5": ["Цінники", "Зарядка телефонів", "Прийомка товару"],
+        "6": ["Каса"],
+        "7": ["Звіт-витрати", "Запити \"Нова Техніка\"", "Прийомка товару"],
+        "8": ["Перевірка переміщень", "Стіна аксесуарів", "Запити \"Акси\""]
+    },
+    9: {
+        "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
+        "2": ["Замовлення сайту", "Запити Сайту"],
+        "3": ["Замовлення наші", "Прийомка товару"],
+        "4": ["OLХ", "Прийомка товару"],
+        "5": ["Цінники", "Прийомка товару"],
+        "6": ["Каса"],
+        "7": ["Звіт-витрати", "Запити \"Нова Техніка\"", "Прийомка товару"],
+        "8": ["Перевірка переміщень", "Стіна аксесуарів", "Запити \"Акси\""],
+        "9": ["Стани техніка і тел.", "Зарядка телефонів"]
+    }
 }
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_state[user_id] = {}
+    user_state[user_id] = {"completed_tasks": set()}
     kb = [[KeyboardButton("▶️ Початок робочого дня")]]
     await update.message.reply_text("Натисніть «Початок робочого дня», щоб розпочати.", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
 
@@ -64,38 +89,43 @@ async def block_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         block = user_state[user_id]["block"]
         workers = user_state[user_id]["workers"]
         tasks = TASKS[workers][block]
+        user_state[user_id]["current_tasks"] = set(tasks)
+        user_state[user_id]["completed_tasks"] = set()
         kb = [[KeyboardButton(t)] for t in tasks]
         await update.message.reply_text("Оберіть завдання:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
 
 async def task_instruction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
-    block = user_state[user_id]["block"]
-    workers = user_state[user_id]["workers"]
+    workers = user_state[user_id].get("workers")
+    block = user_state[user_id].get("block")
+    if not workers or not block:
+        return
     tasks = TASKS[workers][block]
-    if text in tasks:
-        await update.message.reply_text(f"Інструкція для завдання «{text}»")
-        # Ось тут СТАРТУЄМО нагадування (через 10 сек)
-        if text in REMINDERS:
-            for r in REMINDERS[text]:
-                context.application.job_queue.run_once(
-                    send_reminder,
-                    when=r["delay_sec"],
-                    chat_id=user_id,
-                    data={"text": r["text"]}
-                )
+    if text in tasks and text not in user_state[user_id]["completed_tasks"]:
+        user_state[user_id]["current_task"] = text
+        kb = [[KeyboardButton("✅ Виконано")], [KeyboardButton("⬅️ Назад")]]
+        await update.message.reply_text(f"Інструкція для завдання «{text}»", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    elif text in user_state[user_id]["completed_tasks"]:
+        await update.message.reply_text("Завдання вже виконано!")
 
-async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
-    chat_id = context.job.chat_id
-    data = context.job.data
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Готово", callback_data="reminder_done")]
-    ])
-    await context.bot.send_message(chat_id=chat_id, text=data["text"], reply_markup=kb)
-
-async def reminder_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text("✅ Виконано! Дякую!")
+async def mark_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if "current_task" in user_state[user_id]:
+        task = user_state[user_id]["current_task"]
+        user_state[user_id]["completed_tasks"].add(task)
+        del user_state[user_id]["current_task"]
+        workers = user_state[user_id]["workers"]
+        block = user_state[user_id]["block"]
+        tasks = TASKS[workers][block]
+        left_tasks = [t for t in tasks if t not in user_state[user_id]["completed_tasks"]]
+        if left_tasks:
+            kb = [[KeyboardButton(t)] for t in left_tasks]
+            await update.message.reply_text(f"Завдання «{task}» виконано! Оберіть наступне:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+        else:
+            await update.message.reply_text("Всі завдання виконані! Дякуємо 🎉")
+    else:
+        await update.message.reply_text("Спочатку оберіть завдання.")
 
 async def route(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -109,14 +139,14 @@ async def route(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await select_block(update, context)
     if "block" not in user_state[user_id]:
         return await confirm_block(update, context)
-    return await block_tasks(update, context)
+    if text == "✅ Виконано":
+        return await mark_done(update, context)
+    return await task_instruction(update, context)
 
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(reminder_done_callback, pattern=r"reminder_done"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, route))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, task_instruction))
     app.run_polling()
 
 if __name__ == "__main__":

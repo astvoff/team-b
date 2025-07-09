@@ -1,4 +1,2 @@
 python-telegram-bot[job-queue]==20.8
 pytz
-gspread
-oauth2client

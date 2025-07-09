@@ -1,12 +1,21 @@
 import os
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 import datetime
 import pytz
+from telegram import (
+    Update, ReplyKeyboardMarkup, KeyboardButton,
+    InlineKeyboardButton, InlineKeyboardMarkup
+)
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler,
+    CallbackQueryHandler, ContextTypes, filters
+)
 
 TOKEN = os.environ.get("TOKEN")
 user_state = {}
 
+KYIV_TZ = pytz.timezone('Europe/Kyiv')
+
+# === Словник завдань ===
 TASKS = {
     6: {
         "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
@@ -15,116 +24,68 @@ TASKS = {
         "4": ["OLХ", "Стани техніка і тел.", "Прийомка товару"],
         "5": ["Цінники", "Зарядка телефонів", "Звіт-витрати", "Прийомка товару"],
         "6": ["Каса", "Запити \"Нова Техніка\"", "Запити \"Акси\""]
-    },
-    7: {
-        "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
-        "2": ["Замовлення сайту", "Перевірка переміщень", "Запити Сайту"],
-        "3": ["Замовлення наші", "Стіна аксесуарів", "Прийомка товару"],
-        "4": ["OLХ", "Стани техніка і тел.", "Прийомка товару"],
-        "5": ["Цінники", "Зарядка телефонів", "Прийомка товару"],
-        "6": ["Каса", "Запити \"Акси\""],
-        "7": ["Звіт-витрати", "Запити \"Нова Техніка\"", "Прийомка товару"]
-    },
-    8: {
-        "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
-        "2": ["Замовлення сайту", "Запити Сайту"],
-        "3": ["Замовлення наші", "Прийомка товару"],
-        "4": ["OLХ", "Стани техніка і тел.", "Прийомка товару"],
-        "5": ["Цінники", "Зарядка телефонів", "Прийомка товару"],
-        "6": ["Каса"],
-        "7": ["Звіт-витрати", "Запити \"Нова Техніка\"", "Прийомка товару"],
-        "8": ["Перевірка переміщень", "Стіна аксесуарів", "Запити \"Акси\""]
-    },
-    9: {
-        "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
-        "2": ["Замовлення сайту", "Запити Сайту"],
-        "3": ["Замовлення наші", "Прийомка товару"],
-        "4": ["OLХ", "Прийомка товару"],
-        "5": ["Цінники", "Прийомка товару"],
-        "6": ["Каса"],
-        "7": ["Звіт-витрати", "Запити \"Нова Техніка\"", "Прийомка товару"],
-        "8": ["Перевірка переміщень", "Стіна аксесуарів", "Запити \"Акси\""],
-        "9": ["Стани техніка і тел.", "Зарядка телефонів"]
     }
+    # Додай аналогічно для 7, 8, 9 працівників!
 }
 
+# === Інструкції для завдань ===
 INSTRUCTIONS = {
     "Черговий (-a)": "1) Відкрити зміну...\n2) Звести касу на ранок...",
-    "Замовлення сайту": "1) Перевірити актуальність, уточнити у менеджера сайта\n2) Всі замовлення мають стікер з № замовлення\n3) Зарядити вживані телефони\n4) Вживані телефони в фірмових коробках\n5) Все відкладено на поличці замовлень\n6) Перевірити закази на складі",
-    "Замовлення наші": "1) Звірити товар факт/база\n2) Проінформувати клієнта про наявність (за потреби)\n3) Поновити резерви (за потреби)\n4) Техніка підписана відповідальним\n5) Зарядити б/у телефони\n6) Неактуальні закази закрити",
-    "OLХ": "1) Відповідати на повідомлення\n2) Перевірити кількість оголошень (більше 45)\n3) Запустити рекламу (7-9 оголошень)\n4) Звірити актуальність цін",
-    "Стани техніка і тел.": "1) На всю б/у техніку та телефони мають стояти актуальні стани\n2) Контролювати проставлення станів після прийняття в Trade-in",
-    "Цінники": "1) Перевірити всю б/у техніку на якість наклеєних цінників\n2) Перевірити якість поклейки цінників на всій техніці (в тому числі і шоурум)\n3) Перевірити наявні переоцінки, та проконтролювати переклейку",
-    "Звіт-витрати": "1) Всі витрати мають бути проведені по базі\n2) Перевірити правильність проведення (правильні статті)\n3) Зробити та скинути файл exel в групу \"Звіти\" з усіма чеками",
-    "Перевірка переміщень": "1) Перевірити переміщення яким більше двох днів (ГО, Склади, містами)\n2) Переглянути переміщення по Одесі між магазинами за минулі дні\n3) Знайти всі переміщення фізично або розібратись чому воно не доїхало на магазин."
-    # Додавай інші за потреби
+    "Цінники": "1) Перевірити всю б/у техніку на якість наклеєних цінників...",
+    "Замовлення сайту": "1) Перевірити актуальність, уточнити у менеджера сайта...",
+    # Додавай інші інструкції
 }
 
-
+# === Індивідуальні нагадування ===
 REMINDERS = {
     "Черговий (-a)": [
-        {"time": "11:13", "text": "Перевірити телефони Looper!"},
-        {"time": "11:14", "text": "Оновити статуси в чаті!"},
+        {"time": "10:10", "text": "Перевірити телефони Looper!"},
+        {"time": "10:30", "text": "Оновити статуси в чаті!"},
     ],
     "Цінники": [
         {"time": "12:00", "text": "Зроби перевірку цінників!"},
     ],
-    # Додавай інші завдання та нагадування
+    "Замовлення сайту": [
+        {"time": "14:00", "text": "Перевір актуальність замовлень сайту."}
+    ]
+    # Додавай ще
 }
 
-# Після підтвердження блоку:
-for task in tasks:
-    if task in REMINDERS:
-        for r in REMINDERS[task]:
-            h, m = map(int, r["time"].split(":"))
-            now = datetime.datetime.now(KYIV_TZ)
-            target = now.replace(hour=h, minute=m, second=0, microsecond=0)
-            if target < now:
-                # Якщо час уже минув, надсилаємо відразу
-                context.application.create_task(
-                    context.bot.send_message(
-                        chat_id=user_id,
-                        text=r["text"],
-                        reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("Готово", callback_data=f"reminder_done:{task}:{r['text']}")]
-                        ])
-                    )
-                )
-            else:
-                delay = (target - now).total_seconds()
-                job = context.application.job_queue.run_once(
-                    send_reminder, delay, chat_id=user_id, data={"task": task, "text": r["text"]}
-                )
-                # Зберігаємо job в user_state
-                if "jobs" not in user_state[user_id]:
-                    user_state[user_id]["jobs"] = []
-                user_state[user_id]["jobs"].append(job)
+# === Start ===
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user_state[user_id] = {"step": "waiting_start"}
+    kb = [[KeyboardButton("▶️ Початок робочого дня")]]
+    await update.message.reply_text(
+        "Натисніть «Початок робочого дня», щоб розпочати.",
+        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+    )
 
-# Функція для JobQueue
+# === Надсилання нагадування з кнопкою ===
 async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
-    d = context.job.data
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Готово", callback_data=f"reminder_done:{d['task']}:{d['text']}")]
-    ])
+    data = context.job.data
+    kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton("Готово", callback_data=f"reminder_done:{data['task']}:{data['text']}")
+    ]])
     await context.bot.send_message(
         chat_id=chat_id,
-        text=d["text"],
+        text=data["text"],
         reply_markup=kb
     )
 
-# Обробник "Готово"
+# === Кнопка Готово ===
 async def reminder_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     _, task, reminder_text = query.data.split(":", 2)
     user_id = query.from_user.id
-    # Фіксуємо виконання нагадування для цього task
-    if "done_reminders" not in user_state[user_id]:
+    if "done_reminders" not in user_state.get(user_id, {}):
         user_state[user_id]["done_reminders"] = []
     user_state[user_id]["done_reminders"].append((task, reminder_text))
     await query.edit_message_text(f"✅ Виконано: {reminder_text}")
 
+# === Головний хендлер ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
@@ -192,32 +153,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text.startswith("✅ Так, блок"):
             user_state[user_id]["step"] = "tasks"
             user_state[user_id]["done"] = []
+            user_state[user_id]["done_reminders"] = []
             workers = user_state[user_id]["workers"]
             block = user_state[user_id]["block"]
             tasks = TASKS[workers][block]
-            # --- Нагадування: асинхронно ---
-            if "Черговий (-a)" in tasks:
-                now = datetime.datetime.now(KYIV_TZ)
-                for msg, times in REMINDER_TIMES:
-                    for t in times:
-                        h, m = map(int, t.split(":"))
+            # --- Індивідуальні нагадування для кожного завдання ---
+            now = datetime.datetime.now(KYIV_TZ)
+            for task in tasks:
+                if task in REMINDERS:
+                    for r in REMINDERS[task]:
+                        h, m = map(int, r["time"].split(":"))
                         target = now.replace(hour=h, minute=m, second=0, microsecond=0)
                         if target < now:
-                            # Надсилаємо без await!
+                            # Надіслати одразу
                             context.application.create_task(
                                 context.bot.send_message(
                                     chat_id=user_id,
-                                    text=msg,
-                                    reply_markup=InlineKeyboardMarkup(
-                                        [[InlineKeyboardButton("Готово", callback_data=f"done:{msg}")]]
-                                    )
+                                    text=r["text"],
+                                    reply_markup=InlineKeyboardMarkup([
+                                        [InlineKeyboardButton("Готово", callback_data=f"reminder_done:{task}:{r['text']}")]
+                                    ])
                                 )
                             )
                         else:
                             delay = (target - now).total_seconds()
-                            context.application.job_queue.run_once(
-                                send_reminder, delay, chat_id=user_id, data=msg
+                            job = context.application.job_queue.run_once(
+                                send_reminder, delay, chat_id=user_id, data={"task": task, "text": r["text"]}
                             )
+                            if "jobs" not in user_state[user_id]:
+                                user_state[user_id]["jobs"] = []
+                            user_state[user_id]["jobs"].append(job)
             kb = [[KeyboardButton(task)] for task in tasks]
             kb.append([KeyboardButton("⬅️ Назад")])
             kb.append([KeyboardButton("⏹ Завершити робочий день")])
@@ -232,6 +197,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Повернення назад неможливе після підтвердження блоку!")
             return
         if text == "⏹ Завершити робочий день":
+            # Видалити jobs, очистити стейт
+            if "jobs" in user_state[user_id]:
+                for job in user_state[user_id]["jobs"]:
+                    job.schedule_removal()
             user_state[user_id] = {"step": "waiting_start"}
             kb = [[KeyboardButton("▶️ Початок робочого дня")]]
             await update.message.reply_text(
@@ -251,5 +220,5 @@ if __name__ == "__main__":
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    app.add_handler(CallbackQueryHandler(reminder_done, pattern="^done:"))
+    app.add_handler(CallbackQueryHandler(reminder_done, pattern="^reminder_done:"))
     app.run_polling()

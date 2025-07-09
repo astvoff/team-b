@@ -163,7 +163,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             workers = user_state[user_id]["workers"]
             block = user_state[user_id]["block"]
             tasks = TASKS[workers][block]
-            # --- Нагадування ---
+            # --- Нагадування: асинхронно ---
             if "Черговий (-a)" in tasks:
                 now = datetime.datetime.now(KYIV_TZ)
                 for msg, times in REMINDER_TIMES:
@@ -171,8 +171,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         h, m = map(int, t.split(":"))
                         target = now.replace(hour=h, minute=m, second=0, microsecond=0)
                         if target < now:
-                            # Відправляємо одразу, якщо вже минуло
-                            await send_reminder(type("obj", (), {"job": type("obj", (), {"chat_id": user_id, "data": msg})(), "bot": context.bot}))
+                            # Надсилаємо без await!
+                            context.application.create_task(
+                                context.bot.send_message(
+                                    chat_id=user_id,
+                                    text=msg,
+                                    reply_markup=InlineKeyboardMarkup(
+                                        [[InlineKeyboardButton("Готово", callback_data=f"done:{msg}")]]
+                                    )
+                                )
+                            )
                         else:
                             delay = (target - now).total_seconds()
                             context.application.job_queue.run_once(

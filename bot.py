@@ -1,221 +1,153 @@
+# telegram_bot_v2.py
+
 import os
 import datetime
-from telegram import (
-    Update,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-)
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 TOKEN = os.environ.get("TOKEN")
+
+# Державні змінні
 user_state = {}
-daily_blocks_taken = {}  # {date: {block_number: username}}
+used_blocks = {}  # dict на день, що зберігає зайняті блоки
+admin_id = 123456789  # заміни на свій Telegram ID
 
-INSTRUCTION = """🧾 Інструкція до «Чергування»:
-• Відкрити зміну ТОВ
-• Звести касу на ранок
-• Перевірити пропущені Binotel
-• Ранкове прибирання:
-   - Протерти скло
-   - Вологе прибирання поверхонь
-   - Протерти чохли
-   - Прибрати дитячу зону
-   - Помити підлогу
-• Підсобка:
-   - Порядок на стелажах, столі, касі
-   - Віднести техніку на склад
-"""
-
+# Завдання по блоках для 6–9 працівників
 TASKS = {
-    6: {
-        "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
-        "2": ["Замовлення сайту", "Перевірка переміщень", "Запити Сайту"],
-        "3": ["Замовлення наші", "Стіна аксесуарів", "Прийомка товару"],
-        "4": ["OLX", "Стани техніка і тел.", "Прийомка товару"],
-        "5": ["Цінники", "Зарядка телефонів", "Звіт-витрати", "Прийомка товару"],
-        "6": ["Каса", "Запити \"Нова Техніка\"", "Запити \"Акси\""],
-    },
-    7: {
-        "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
-        "2": ["Замовлення сайту", "Перевірка переміщень", "Запити Сайту"],
-        "3": ["Замовлення наші", "Стіна аксесуарів", "Прийомка товару"],
-        "4": ["OLX", "Стани техніка і тел.", "Прийомка товару"],
-        "5": ["Цінники", "Зарядка телефонів", "Прийомка товару"],
-        "6": ["Каса", "Запити \"Акси\""],
-        "7": ["Звіт-витрати", "Запити \"Нова Техніка\"", "Прийомка товару"],
-    },
-    8: {
-        "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
-        "2": ["Замовлення сайту", "Запити Сайту"],
-        "3": ["Замовлення наші", "Прийомка товару"],
-        "4": ["OLX", "Стани техніка і тел.", "Прийомка товару"],
-        "5": ["Цінники", "Зарядка телефонів", "Прийомка товару"],
-        "6": ["Каса"],
-        "7": ["Звіт-витрати", "Запити \"Нова Техніка\"", "Прийомка товару"],
-        "8": ["Перевірка переміщень", "Стіна аксесуарів", "Запити \"Акси\""]
-    },
-    9: {
-        "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
-        "2": ["Замовлення сайту", "Запити Сайту"],
-        "3": ["Замовлення наші", "Прийомка товару"],
-        "4": ["OLX", "Прийомка товару"],
-        "5": ["Цінники", "Прийомка товару"],
-        "6": ["Каса"],
-        "7": ["Звіт-витрати", "Запити \"Нова Техніка\"", "Прийомка товару"],
-        "8": ["Перевірка переміщень", "Стіна аксесуарів", "Запити \"Акси\""],
-        "9": ["Стани техніка і тел.", "Зарядка телефонів"]
-    }
+    6: {"1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"], ...},  # скорочено
+    7: {"1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"], ...},
+    8: {...},  # додай завдання самостійно
+    9: {...}
 }
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_state[update.effective_user.id] = {"step": "start", "done": []}
-    await update.message.reply_text(
-        "Привіт! Щоб почати день, натисни:",
-        reply_markup=ReplyKeyboardMarkup(
-            [[KeyboardButton("🚀 Розпочати день")]],
-            resize_keyboard=True,
-        ),
-    )
+INSTRUCTION = """Інструкція лише до Чергування: ..."""
 
-async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    username = update.effective_user.username or f"id_{user_id}"
+    user_state[user_id] = {"step": "begin"}
+    kb = [[KeyboardButton("▶️ Розпочати день")]]
+    await update.message.reply_text("Привіт!", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+
+# Хендлер
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     text = update.message.text
     state = user_state.get(user_id, {})
-    step = state.get("step", "start")
+    step = state.get("step", "begin")
 
+    # Кнопка назад
     if text == "⬅️ Назад":
-        return await go_back(update)
+        if step == "confirm_block":
+            user_state[user_id]["step"] = "block"
+            return await show_blocks(update, context)
+        if step == "block":
+            user_state[user_id]["step"] = "workers"
+            return await ask_workers(update, context)
+        if step == "task":
+            user_state[user_id]["step"] = "confirm_block"
+            return await confirm_block(update, context)
 
-    if text == "🚀 Розпочати день":
-        user_state[user_id]["step"] = "workers"
-        return await update.message.reply_text(
-            "Скільки працівників сьогодні на зміні?",
-            reply_markup=ReplyKeyboardMarkup(
-                [[KeyboardButton(str(n))] for n in range(6, 10)],
-                resize_keyboard=True,
-            ),
-        )
+    if text == "▶️ Розпочати день":
+        user_state[user_id] = {"step": "workers", "done": []}
+        return await ask_workers(update, context)
 
     if step == "workers":
         if text.isdigit() and int(text) in TASKS:
             user_state[user_id]["workers"] = int(text)
             user_state[user_id]["step"] = "block"
-            return await show_blocks(update)
-        else:
-            return await update.message.reply_text("Оберіть число від 6 до 9")
+            return await show_blocks(update, context)
 
     if step == "block":
-        today = str(datetime.date.today())
-        block_taken = daily_blocks_taken.get(today, {})
-        if block_taken.get(text):
-            return await update.message.reply_text("⛔ Цей блок уже зайнято іншим працівником сьогодні.")
-        user_state[user_id]["selected_block"] = text
+        block = text.strip()
+        workers = user_state[user_id]["workers"]
+        today = datetime.date.today().isoformat()
+        used_today = used_blocks.get(today, set())
+        if block in used_today:
+            return await update.message.reply_text("❗Цей блок вже зайнятий іншим працівником.")
+        user_state[user_id]["block"] = block
         user_state[user_id]["step"] = "confirm_block"
-        return await update.message.reply_text(f"Ви точно обрали блок {text}?", reply_markup=ReplyKeyboardMarkup(
-            [[KeyboardButton("✅ Так")], [KeyboardButton("⬅️ Назад")]],
-            resize_keyboard=True
-        ))
+        return await confirm_block(update, context)
 
     if step == "confirm_block":
-        if text == "✅ Так":
-            block = user_state[user_id]["selected_block"]
-            today = str(datetime.date.today())
-            daily_blocks_taken.setdefault(today, {})[block] = username
-            user_state[user_id]["block"] = block
-            user_state[user_id]["step"] = "tasks"
-            return await show_tasks(update)
+        if text == f"✅ Так, блок {user_state[user_id]['block']}":
+            block = user_state[user_id]['block']
+            today = datetime.date.today().isoformat()
+            used_blocks.setdefault(today, set()).add(block)
+            user_state[user_id]["step"] = "task"
+            return await show_tasks(update, context)
         else:
-            user_state[user_id]["step"] = "block"
-            return await show_blocks(update)
+            return await show_blocks(update, context)
 
-    if step == "tasks":
-        if text.startswith("✅"):
+    if step == "task":
+        current_task = text.replace("✅ ", "")
+        if current_task.startswith("✅"):
             return
-        user_state[user_id]["current_task"] = text
-        user_state[user_id]["step"] = "in_task"
-        if "Черг" in text:
+        user_state[user_id]["current_task"] = current_task
+        user_state[user_id]["step"] = "confirm_task"
+        await update.message.reply_text(f"🛠 Завдання: {current_task}")
+        if "Черг" in current_task:
             await update.message.reply_text(INSTRUCTION)
-        return await update.message.reply_text(
-            f"Завдання: {text}",
-            reply_markup=ReplyKeyboardMarkup(
-                [[KeyboardButton("✅ Виконано")], [KeyboardButton("⬅️ Назад")]],
-                resize_keyboard=True,
-            ),
-        )
+        kb = [[KeyboardButton("✅ Виконано")], [KeyboardButton("⬅️ Назад")]]
+        return await update.message.reply_text("Після виконання — натисни «✅ Виконано»",
+                                              reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
 
-    if step == "in_task" and text == "✅ Виконано":
-        task = user_state[user_id]["current_task"]
-        user_state[user_id].setdefault("done", []).append((task, datetime.datetime.now()))
-        user_state[user_id]["step"] = "tasks"
-        return await show_tasks(update)
+    if step == "confirm_task":
+        if text == "✅ Виконано":
+            task = user_state[user_id].get("current_task")
+            done = user_state[user_id].get("done", [])
+            if task not in done:
+                done.append(task)
+                user_state[user_id]["done"] = done
+            user_state[user_id]["step"] = "task"
+            await update.message.reply_text("✅ Завдання виконано!")
+            return await show_tasks(update, context)
 
-    if text == "🏁 Завершити день":
-        return await end_day(update)
+    if text == "⏹ Завершити день":
+        return await finish_day(update, context)
 
-async def go_back(update):
+# Завершити день
+async def finish_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    step = user_state[user_id].get("step")
-    if step == "block":
-        user_state[user_id]["step"] = "workers"
-        return await update.message.reply_text("⬅️ Назад до вибору кількості працівників")
-    elif step == "confirm_block":
-        user_state[user_id]["step"] = "block"
-        return await show_blocks(update)
-    elif step == "tasks":
-        user_state[user_id]["step"] = "block"
-        return await show_blocks(update)
-    elif step == "in_task":
-        user_state[user_id]["step"] = "tasks"
-        return await show_tasks(update)
+    data = user_state.get(user_id, {})
+    username = update.effective_user.username
+    block = data.get("block")
+    done = data.get("done", [])
+    now = datetime.datetime.now().strftime("%H:%M:%S")
+    # TODO: зберегти в Google Sheets тут
+    user_state[user_id] = {}
+    return await update.message.reply_text(f"Дякую {username}, твій день завершено. Всього доброго!")
 
-async def show_blocks(update):
-    user_id = update.effective_user.id
-    blocks = TASKS[user_state[user_id]["workers"]].keys()
-    buttons = [[KeyboardButton(b)] for b in blocks]
-    return await update.message.reply_text("Оберіть свій блок:", reply_markup=ReplyKeyboardMarkup(buttons + [[KeyboardButton("⬅️ Назад")]], resize_keyboard=True))
+async def ask_workers(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    kb = [[KeyboardButton(str(n))] for n in range(6, 10)]
+    await update.message.reply_text("Скільки працівників на зміні?", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
 
-async def show_tasks(update):
-    user_id = update.effective_user.id
-    workers = user_state[user_id]["workers"]
-    block = user_state[user_id]["block"]
-    done = [task for task, _ in user_state[user_id].get("done", [])]
-    tasks = TASKS[workers][block]
-    buttons = []
-    for t in tasks:
-        label = f"✅ {t}" if t in done else t
-        buttons.append([KeyboardButton(label)])
-    buttons.append([KeyboardButton("🏁 Завершити день")])
-    return await update.message.reply_text("Оберіть завдання:", reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
+async def show_blocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    workers = user_state[update.effective_user.id]["workers"]
+    kb = [[KeyboardButton(str(n))] for n in TASKS[workers].keys()]
+    kb.append([KeyboardButton("⬅️ Назад")])
+    await update.message.reply_text("Оберіть блок:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
 
-async def end_day(update):
-    user_id = update.effective_user.id
-    username = update.effective_user.username or f"id_{user_id}"
-    done_tasks = user_state[user_id].get("done", [])
-    summary = f"Звіт для @{username}:\n"
-    for task, t in done_tasks:
-        summary += f"• {task} — {t.strftime('%H:%M')}\n"
-    await update.message.reply_text(summary)
-    user_state[user_id] = {"step": "start", "done": []}
-    return await update.message.reply_text("✅ День завершено! Дані очищено.")
+async def confirm_block(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    block = user_state[update.effective_user.id]["block"]
+    kb = [[KeyboardButton(f"✅ Так, блок {block}"), KeyboardButton("⬅️ Назад")]]
+    await update.message.reply_text(f"Ви точно обрали блок {block}?",
+                                    reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
 
-def main():
+async def show_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    state = user_state[update.effective_user.id]
+    workers = state["workers"]
+    block = state["block"]
+    done = state.get("done", [])
+    all_tasks = TASKS[workers][block]
+    kb = [[KeyboardButton(("✅ " if t in done else "") + t)] for t in all_tasks]
+    kb.append([KeyboardButton("⏹ Завершити день")])
+    kb.append([KeyboardButton("⬅️ Назад")])
+    await update.message.reply_text("Оберіть завдання:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+
+# Запуск
+if __name__ == "__main__":
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
     app.run_polling()
-    
-    import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
-
-if __name__ == "__main__":
-    main()
-    
-    

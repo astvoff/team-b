@@ -4,7 +4,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 
 TOKEN = os.environ.get("TOKEN")
 
-# Основна структура завдань і підзавдань (приклад)
 BLOCK_TASKS = {
     6: {
         "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
@@ -14,10 +13,9 @@ BLOCK_TASKS = {
         "5": ["Цінники", "Зарядка телефонів", "Звіт-витрати", "Прийомка товару"],
         "6": ["Каса", 'Запити "Нова Техніка"', 'Запити "Акси"']
     },
-    # додай аналогічно для 7, 8, 9 працівників...
+    # Додай аналогічно 7, 8, 9 блоки!
 }
 
-# Підзавдання для прикладу
 SUBTASKS = {
     "Замовлення сайту": [
         "Перевірити актуальність, уточнити у менеджера сайта",
@@ -38,7 +36,7 @@ SUBTASKS = {
     # ... додай свої підзавдання для кожного завдання, де це потрібно
 }
 
-user_state = {}  # user_id: dict
+user_state = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -89,39 +87,52 @@ async def block_tasks(update, context):
     workers = user_state[user_id]["workers"]
     block = user_state[user_id]["block"]
     tasks = BLOCK_TASKS[workers][block]
-    user_state[user_id]["tasks"] = {t: False for t in tasks}
-    user_state[user_id]["completed_tasks"] = set()
+    # Якщо state вже tasks -- не перезаписувати completed_tasks, щоб після повернення зберігались виконані
+    if user_state[user_id].get("state") != "tasks":
+        user_state[user_id]["tasks"] = {t: False for t in tasks}
+        user_state[user_id]["completed_tasks"] = set()
     user_state[user_id]["state"] = "tasks"
-    kb = [[KeyboardButton(t)] for t in tasks if not user_state[user_id]["tasks"][t]]
-    kb.append([KeyboardButton("⬅️ Назад")])
-    await update.message.reply_text(
-        "Оберіть завдання:",
-        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-    )
+    left_tasks = [t for t in tasks if not user_state[user_id]["tasks"][t]]
+    if left_tasks:
+        kb = [[KeyboardButton(t)] for t in left_tasks]
+        kb.append([KeyboardButton("⬅️ Назад")])
+        await update.message.reply_text(
+            "Оберіть завдання:",
+            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+        )
+    else:
+        await update.message.reply_text(
+            "Всі завдання виконані! Дякуємо 🎉",
+            reply_markup=ReplyKeyboardMarkup(
+                [[KeyboardButton("⬅️ Назад")]],
+                resize_keyboard=True
+            )
+        )
 
 async def handle_task(update, context):
     user_id = update.effective_user.id
     text = update.message.text
+    # Якщо є підзавдання
     if text in SUBTASKS:
         user_state[user_id]["state"] = "subtasks"
         user_state[user_id]["current_task"] = text
         user_state[user_id]["current_subtasks"] = {s: False for s in SUBTASKS[text]}
-        kb = [[KeyboardButton(s)] for s in SUBTASKS[text] if not user_state[user_id]["current_subtasks"][s]]
+        left_sub = [s for s in SUBTASKS[text] if not user_state[user_id]["current_subtasks"][s]]
+        kb = [[KeyboardButton(s)] for s in left_sub]
         kb.append([KeyboardButton("⬅️ Назад")])
         await update.message.reply_text(
             f"Підзавдання для «{text}»:",
             reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
         )
     else:
-        # якщо для завдання підзавдань немає
+        # Якщо підзавдань немає
         user_state[user_id]["tasks"][text] = True
         user_state[user_id]["completed_tasks"].add(text)
+        user_state[user_id]["state"] = "task_done"
+        kb = [[KeyboardButton("Перейти до інших завдань")]]
         await update.message.reply_text(
             f"Завдання «{text}» виконано!",
-            reply_markup=ReplyKeyboardMarkup(
-                [[KeyboardButton("⬅️ Назад")]],
-                resize_keyboard=True
-            )
+            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
         )
 
 async def handle_subtask(update, context):
@@ -129,6 +140,9 @@ async def handle_subtask(update, context):
     text = update.message.text
     state = user_state[user_id]
     if text == "⬅️ Назад":
+        user_state[user_id]["state"] = "tasks"
+        return await block_tasks(update, context)
+    if text == "Перейти до інших завдань":
         user_state[user_id]["state"] = "tasks"
         return await block_tasks(update, context)
     if text in state["current_subtasks"]:
@@ -148,13 +162,11 @@ async def handle_subtask(update, context):
             state["completed_tasks"].add(main_task)
             del state["current_subtasks"]
             del state["current_task"]
-            user_state[user_id]["state"] = "tasks"
+            user_state[user_id]["state"] = "subtasks_done"
+            kb = [[KeyboardButton("Перейти до інших завдань")]]
             await update.message.reply_text(
                 f"Всі підзавдання виконані! Завдання «{main_task}» закрито.",
-                reply_markup=ReplyKeyboardMarkup(
-                    [[KeyboardButton("⬅️ Назад")]],
-                    resize_keyboard=True
-                )
+                reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
             )
 
 async def main_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -186,6 +198,14 @@ async def main_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await handle_task(update, context)
     if state == "subtasks":
         return await handle_subtask(update, context)
+    if state == "subtasks_done":
+        if text == "Перейти до інших завдань":
+            user_state[user_id]["state"] = "tasks"
+            return await block_tasks(update, context)
+    if state == "task_done":
+        if text == "Перейти до інших завдань":
+            user_state[user_id]["state"] = "tasks"
+            return await block_tasks(update, context)
 
 def main():
     app = Application.builder().token(TOKEN).build()

@@ -5,7 +5,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 TOKEN = os.environ.get("TOKEN")
 user_state = {}
 
-# Завдання по кількості працівників на зміні
 TASKS = {
     6: {
         "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
@@ -49,60 +48,59 @@ TASKS = {
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_state[user_id] = {"completed_tasks": set()}
+    user_state[user_id] = {"state": "start"}
     kb = [[KeyboardButton("▶️ Початок робочого дня")]]
     await update.message.reply_text("Натисніть «Початок робочого дня», щоб розпочати.", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
 
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user_state[user_id] = {"state": "workers"}
     kb = [[KeyboardButton(str(i))] for i in TASKS.keys()]
     await update.message.reply_text("Оберіть кількість працівників на зміні:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
 
 async def select_block(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    text = update.message.text
-    if text.isdigit() and int(text) in TASKS:
-        user_state[user_id]["workers"] = int(text)
-        blocks = TASKS[int(text)]
-        kb = [[KeyboardButton(str(i))] for i in blocks.keys()]
-        kb.append([KeyboardButton("⬅️ Назад")])
-        await update.message.reply_text("Оберіть свій блок:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    workers = int(update.message.text)
+    user_state[user_id].update({"workers": workers, "state": "block"})
+    blocks = TASKS[workers]
+    kb = [[KeyboardButton(str(i))] for i in blocks.keys()]
+    kb.append([KeyboardButton("⬅️ Назад")])
+    await update.message.reply_text("Оберіть свій блок:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
 
 async def confirm_block(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    text = update.message.text
-    workers = user_state[user_id].get("workers")
-    if text in TASKS[workers]:
-        user_state[user_id]["block"] = text
-        kb = [
-            [KeyboardButton(f"✅ Так, блок {text}")],
-            [KeyboardButton("⬅️ Назад")]
-        ]
-        await update.message.reply_text(
-            f"Ви впевнені, що обрали блок {text}? Після підтвердження змінити не можна.",
-            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-        )
+    block = update.message.text
+    user_state[user_id].update({"block": block, "state": "confirm_block"})
+    kb = [
+        [KeyboardButton(f"✅ Так, блок {block}")],
+        [KeyboardButton("⬅️ Назад")]
+    ]
+    await update.message.reply_text(
+        f"Ви впевнені, що обрали блок {block}? Після підтвердження змінити не можна.",
+        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+    )
 
 async def block_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    text = update.message.text
-    if text.startswith("✅ Так, блок "):
-        block = user_state[user_id]["block"]
-        workers = user_state[user_id]["workers"]
-        tasks = TASKS[workers][block]
-        user_state[user_id]["current_tasks"] = set(tasks)
-        user_state[user_id]["completed_tasks"] = set()
-        kb = [[KeyboardButton(t)] for t in tasks]
-        await update.message.reply_text("Оберіть завдання:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    workers = user_state[user_id]["workers"]
+    block = user_state[user_id]["block"]
+    tasks = TASKS[workers][block]
+    user_state[user_id].update({"state": "tasks", "current_tasks": set(tasks), "completed_tasks": set()})
+    kb = [[KeyboardButton(t)] for t in tasks]
+    kb.append([KeyboardButton("⬅️ Назад")])
+    await update.message.reply_text(
+        "Оберіть завдання:",
+        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+    )
 
 async def task_instruction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
-    workers = user_state[user_id].get("workers")
-    block = user_state[user_id].get("block")
-    if not workers or not block:
-        return
+    workers = user_state[user_id]["workers"]
+    block = user_state[user_id]["block"]
     tasks = TASKS[workers][block]
     if text in tasks and text not in user_state[user_id]["completed_tasks"]:
+        user_state[user_id]["state"] = "task_detail"
         user_state[user_id]["current_task"] = text
         kb = [[KeyboardButton("✅ Виконано")], [KeyboardButton("⬅️ Назад")]]
         await update.message.reply_text(f"Інструкція для завдання «{text}»", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
@@ -119,8 +117,10 @@ async def mark_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         block = user_state[user_id]["block"]
         tasks = TASKS[workers][block]
         left_tasks = [t for t in tasks if t not in user_state[user_id]["completed_tasks"]]
+        user_state[user_id]["state"] = "tasks"
         if left_tasks:
             kb = [[KeyboardButton(t)] for t in left_tasks]
+            kb.append([KeyboardButton("⬅️ Назад")])
             await update.message.reply_text(f"Завдання «{task}» виконано! Оберіть наступне:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
         else:
             await update.message.reply_text("Всі завдання виконані! Дякуємо 🎉")
@@ -128,20 +128,49 @@ async def mark_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Спочатку оберіть завдання.")
 
 async def route(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
     user_id = update.effective_user.id
+    text = update.message.text
 
+    # СТАРТ
     if text == "/start":
         return await start(update, context)
+
+    state = user_state.get(user_id, {}).get("state", "start")
+
+    # На кожному етапі: якщо "⬅️ Назад", повертаємося на попередній крок
+    if text == "⬅️ Назад":
+        if state == "block":
+            return await main_menu(update, context)
+        if state == "confirm_block":
+            return await select_block(update, context)
+        if state == "tasks":
+            return await confirm_block(update, context)
+        if state == "task_detail":
+            return await block_tasks(update, context)
+
+    # Розпочати день
     if text == "▶️ Початок робочого дня":
         return await main_menu(update, context)
-    if user_id not in user_state or "workers" not in user_state[user_id]:
+
+    # Вибір кількості працівників
+    if state == "workers" and text.isdigit() and int(text) in TASKS:
         return await select_block(update, context)
-    if "block" not in user_state[user_id]:
+
+    # Вибір блоку
+    if state == "block" and text in TASKS[user_state[user_id]["workers"]]:
         return await confirm_block(update, context)
-    if text == "✅ Виконано":
+
+    # Підтвердження блоку
+    if state == "confirm_block" and text.startswith("✅ Так, блок "):
+        return await block_tasks(update, context)
+
+    # Вибір завдання
+    if state == "tasks" and text in TASKS[user_state[user_id]["workers"]][user_state[user_id]["block"]]:
+        return await task_instruction(update, context)
+
+    # Відмітка виконання
+    if state == "task_detail" and text == "✅ Виконано":
         return await mark_done(update, context)
-    return await task_instruction(update, context)
 
 def main():
     app = Application.builder().token(TOKEN).build()

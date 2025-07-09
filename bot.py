@@ -60,50 +60,69 @@ INSTRUCTIONS = {
     # Додавай інші за потреби
 }
 
-REMINDER_TIMES = [
-    ("Саме час перевірити телефони на включення Looper та їх чистоту", ["10:46", "10:47", "10:20"]),
-    ("Перевір, щоб на одному обліковому запису було не більше 10 пристроїв", ["10:47"]),
-    ("Не забудь перевірити групу сайту", ["10:40"])
-]
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_state[user_id] = {"step": "waiting_start"}
-    kb = [[KeyboardButton("▶️ Початок робочого дня")]]
-    await update.message.reply_text(
-        "Натисніть «Початок робочого дня», щоб розпочати.",
-        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-    )
-    # Додаємо тестове нагадування!
-    context.application.job_queue.run_once(
-        send_reminder, 10, chat_id=user_id, data="Тестове нагадування через 10 секунд!"
-    )
+REMINDERS = {
+    "Черговий (-a)": [
+        {"time": "11:13", "text": "Перевірити телефони Looper!"},
+        {"time": "11:14", "text": "Оновити статуси в чаті!"},
+    ],
+    "Цінники": [
+        {"time": "12:00", "text": "Зроби перевірку цінників!"},
+    ],
+    # Додавай інші завдання та нагадування
+}
 
-KYIV_TZ = pytz.timezone('Europe/Kyiv')
+# Після підтвердження блоку:
+for task in tasks:
+    if task in REMINDERS:
+        for r in REMINDERS[task]:
+            h, m = map(int, r["time"].split(":"))
+            now = datetime.datetime.now(KYIV_TZ)
+            target = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            if target < now:
+                # Якщо час уже минув, надсилаємо відразу
+                context.application.create_task(
+                    context.bot.send_message(
+                        chat_id=user_id,
+                        text=r["text"],
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("Готово", callback_data=f"reminder_done:{task}:{r['text']}")]
+                        ])
+                    )
+                )
+            else:
+                delay = (target - now).total_seconds()
+                job = context.application.job_queue.run_once(
+                    send_reminder, delay, chat_id=user_id, data={"task": task, "text": r["text"]}
+                )
+                # Зберігаємо job в user_state
+                if "jobs" not in user_state[user_id]:
+                    user_state[user_id]["jobs"] = []
+                user_state[user_id]["jobs"].append(job)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_state[user_id] = {"step": "waiting_start"}
-    kb = [[KeyboardButton("▶️ Початок робочого дня")]]
-    await update.message.reply_text(
-        "Натисніть «Початок робочого дня», щоб розпочати.",
-        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-    )
-
+# Функція для JobQueue
 async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
-    text = context.job.data
-    kb = InlineKeyboardMarkup([[InlineKeyboardButton("Готово", callback_data=f"done:{text}")]])
+    d = context.job.data
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Готово", callback_data=f"reminder_done:{d['task']}:{d['text']}")]
+    ])
     await context.bot.send_message(
         chat_id=chat_id,
-        text=text,
+        text=d["text"],
         reply_markup=kb
     )
 
+# Обробник "Готово"
 async def reminder_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    reminder_text = query.data.replace("done:", "")
+    _, task, reminder_text = query.data.split(":", 2)
+    user_id = query.from_user.id
+    # Фіксуємо виконання нагадування для цього task
+    if "done_reminders" not in user_state[user_id]:
+        user_state[user_id]["done_reminders"] = []
+    user_state[user_id]["done_reminders"].append((task, reminder_text))
     await query.edit_message_text(f"✅ Виконано: {reminder_text}")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):

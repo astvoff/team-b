@@ -140,21 +140,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if state["step"] == "confirm_block":
-        if text == "⬅️ Назад":
-            user_state[user_id]["step"] = "block"
-            workers = user_state[user_id]["workers"]
-            kb = [[KeyboardButton(str(i))] for i in TASKS[workers]]
-            kb.append([KeyboardButton("⬅️ Назад")])
-            return await update.message.reply_text(
-                "Оберіть свій блок:",
-                reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-            )
-        if text.startswith("✅ Так, блок"):
-            user_state[user_id]["step"] = "tasks"
-            user_state[user_id]["done"] = []
-            workers = user_state[user_id]["workers"]
-            block = user_state[user_id]["block"]
-            tasks = TASKS[workers][block]
+    if text == "⬅️ Назад":
+        user_state[user_id]["step"] = "block"
+        workers = user_state[user_id]["workers"]
+        kb = [[KeyboardButton(str(i))] for i in TASKS[workers]]
+        kb.append([KeyboardButton("⬅️ Назад")])
+        return await update.message.reply_text(
+            "Оберіть свій блок:",
+            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+        )
+    # --- Ось тут головна зміна! ---
+    if text.startswith("✅ Так, блок"):
+        user_state[user_id]["step"] = "tasks"
+        user_state[user_id]["done"] = []
+        workers = user_state[user_id]["workers"]
+        block = user_state[user_id]["block"]
+        tasks = TASKS[workers][block]
+        # (нагадування, як у попередньому коді)
+        kb = [[KeyboardButton(task)] for task in tasks]
+        kb.append([KeyboardButton("⬅️ Назад")])
+        kb.append([KeyboardButton("⏹ Завершити робочий день")])
+        await update.message.reply_text(
+            f"Ваші завдання на сьогодні (блок {block}):",
+            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+        )
+    return
             # --- Нагадування ---
             if "Черговий (-a)" in tasks:
                 now = datetime.datetime.now(KYIV_TZ)

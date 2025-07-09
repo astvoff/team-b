@@ -54,6 +54,67 @@ INSTRUCTIONS = {
     # і т.д.
 }
 
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import JobQueue
+import pytz
+import datetime
+
+# ... (інший код як раніше)
+
+KYIV_TZ = pytz.timezone('Europe/Kyiv')
+
+REMINDER_TIMES = [
+    ("Саме час перевірити телефони на включення Looper та їх чистоту", ["10:10", "10:15", "10:20"]),
+    ("Перевір, щоб на одному обліковому запису було не більше 10 пристроїв", ["10:30"]),
+    ("Не забудь перевірити групу сайту", ["10:40"])
+]
+
+# --- Додаємо функцію-нагадувач ---
+async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_message(
+        chat_id=context.job.chat_id,
+        text=context.job.data
+    )
+
+# --- Оновлення handle_message: під час підтвердження блоку ---
+    if state["step"] == "confirm_block":
+        if text == "⬅️ Назад":
+            # ... як було ...
+            return
+        if text.startswith("✅ Так, блок"):
+            user_state[user_id]["step"] = "tasks"
+            user_state[user_id]["done"] = []
+            workers = user_state[user_id]["workers"]
+            block = user_state[user_id]["block"]
+            tasks = TASKS[workers][block]
+            # === Додаємо перевірку для «Черговий (-a)» ===
+            if "Черговий (-a)" in tasks:
+                for msg, times in REMINDER_TIMES:
+                    for t in times:
+                        h, m = map(int, t.split(":"))
+                        now = datetime.datetime.now(KYIV_TZ)
+                        target = now.replace(hour=h, minute=m, second=0, microsecond=0)
+                        if target < now:
+                            target += datetime.timedelta(days=1)  # якщо вже минуло — на завтра
+                        delay = (target - now).total_seconds()
+                        context.application.job_queue.run_once(
+                            send_reminder,
+                            delay,
+                            chat_id=user_id,
+                            data=msg
+                        )
+            # --- Відправляємо завдання ---
+            kb = [[KeyboardButton(task)] for task in tasks]
+            kb.append([KeyboardButton("⬅️ Назад")])
+            kb.append([KeyboardButton("⏹ Завершити робочий день")])
+            await update.message.reply_text(
+                f"Ваші завдання на сьогодні (блок {block}):",
+                reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+            )
+        return
+
+# --- решта коду залишається як є ---
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_state[user_id] = {"step": "waiting_start"}

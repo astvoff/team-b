@@ -215,22 +215,7 @@ def main():
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
-def save_report_to_sheet(username, workers, block, task_list):
-    # Параметри таблиці
-    SHEET_ID = "1_iopd8R9ZKTORO8_5NL_rw7cM7H0v8MEfnp-8Qzmvxo"
-    SHEET_NAME = "Лист1"
-    CREDENTIALS_FILE = "task-bot-465403-85d82af8f522.json"
-
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
-    client = gspread.authorize(creds)
-    sheet = client.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
-
-    today = datetime.now().strftime("%d.%m.%Y")
-
-    for task, time_done in task_list.items():
-        row = [today, username, workers, block, task, time_done]
-        sheet.append_row(row)
-
 if __name__ == "__main__":
     main()
+    
+    

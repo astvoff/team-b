@@ -66,6 +66,19 @@ REMINDER_TIMES = [
     ("Не забудь перевірити групу сайту", ["10:40"])
 ]
 
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user_state[user_id] = {"step": "waiting_start"}
+    kb = [[KeyboardButton("▶️ Початок робочого дня")]]
+    await update.message.reply_text(
+        "Натисніть «Початок робочого дня», щоб розпочати.",
+        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+    )
+    # Додаємо тестове нагадування!
+    context.application.job_queue.run_once(
+        send_reminder, 10, chat_id=user_id, data="Тестове нагадування через 10 секунд!"
+    )
+
 KYIV_TZ = pytz.timezone('Europe/Kyiv')
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):

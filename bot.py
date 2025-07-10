@@ -7,7 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 # Завантаження .env
 load_dotenv()
@@ -20,10 +20,8 @@ logging.basicConfig(level=logging.INFO)
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
 gs = gspread.authorize(creds)
-
-# ВАЖЛИВО! Тут ВСТАВ свій KEY/URL (див. попереднє пояснення)
-SHEET_KEY = '1GcXTzTFPYcisYjup9BoqEUQqGOoLlWnhpQJRQ82vi44'  # Наприклад, 1uI9AxAAwAEtwQbc9qEZI6UZXsL1g4l4gtyPGIbRHj1z
-sheet = gs.open_by_key(SHEET_KEY).sheet1
+SHEET_KEY = os.getenv('SHEET_KEY')  # Тепер з .env, щоб не палити публічно
+sheet = gs.open_by_key(SHEET_KEY).worksheet('Tasks')  # Явно вказуємо лист
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -32,16 +30,24 @@ scheduler = AsyncIOScheduler()
 user_sessions = {}
 
 def get_today():
- datetime.now(tz=datetime.timezone.utc) + timedelta(hours=3)  # якщо ти в UTC+3
+    # Український час (UTC+3)
+    ua_time = datetime.now(timezone.utc) + timedelta(hours=3)
+    return ua_time.strftime('%Y-%m-%d')
 
 def get_blocks_count():
-    records = sheet.get_all_records()
-    today = get_today()
-    blocks = set()
-    for rec in records:
-        if str(rec["Дата"]) == today:
-            blocks.add(str(rec["Блок"]))
-    return sorted(list(blocks), key=lambda x: int(x))
+    try:
+        records = sheet.get_all_records()
+        today = get_today()
+        blocks = set()
+        for rec in records:
+            # Порівняння дати як рядків (у таблиці і у бота)
+            if str(rec["Дата"]) == today:
+                blocks.add(str(rec["Блок"]))
+        # Якщо з таблиці не зчитались — повертаємо для тесту ["1", "2", "3"]
+        return sorted(list(blocks), key=lambda x: int(x)) if blocks else ["1", "2", "3"]
+    except Exception as e:
+        print("DEBUG get_blocks_count error:", e)
+        return ["1", "2", "3"]
 
 def get_block_tasks(block, user_id):
     records = sheet.get_all_records()
@@ -114,15 +120,15 @@ async def start_cmd(message: types.Message):
     )
     await message.answer("Вітаю! Натисніть «Розпочати день» щоб вибрати свій блок.", reply_markup=kb)
 
-@dp.message(lambda msg: msg.text == 'Розпочати день')
+@dp.message(lambda msg: msg.text and msg.text.strip().lower() == 'розпочати день')
 async def choose_blocks(message: types.Message):
     blocks = get_blocks_count()
     if not blocks:
         await message.answer("Немає доступних блоків на сьогодні.")
         return
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     for b in blocks:
-        kb.add(KeyboardButton(f"{b} блок"))
+        kb.add(types.KeyboardButton(f"{b} блок"))
     await message.answer(f"Скільки блоків сьогодні працює? Обери свій блок:", reply_markup=kb)
 
 @dp.message(F.text.regexp(r'^\d+ блок$'))

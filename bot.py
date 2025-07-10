@@ -33,8 +33,8 @@ def now_ua():
     return datetime.now(timezone.utc) + timedelta(hours=3)
 
 def get_today():
-    # Формат YYYY-MM-DD
-    return now_ua().strftime('%Y-%m-%d')
+    # Формат YYYY-MM-DD, дата саме для Києва
+    return (datetime.now(timezone.utc) + timedelta(hours=3)).strftime('%Y-%m-%d')
 
 def get_blocks_count():
     try:

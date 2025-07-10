@@ -1,4 +1,5 @@
 aiogram
 gspread
 oauth2client
+apscheduler
 python-dotenv

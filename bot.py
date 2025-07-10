@@ -76,6 +76,7 @@ def assign_user_to_block(block, user_id):
 def mark_task_done(row):
     sheet.update_cell(row, 7, "TRUE")
 
+# Відправка нагадування
 async def send_reminder(user_id, task, desc, row):
     print(f"DEBUG: Sending reminder for user_id={user_id}, task={task}")
     kb = types.ReplyKeyboardMarkup(
@@ -84,7 +85,7 @@ async def send_reminder(user_id, task, desc, row):
     )
     await bot.send_message(
         user_id,
-        f"Нагадування: {task}\n\n{desc}\n\nПісля виконання натисни «✅ Виконано».",
+        f"Завдання: {task}\n\nНагадування: {desc}\n\nПісля виконання натисни «✅ Виконано».",
         reply_markup=kb
     )
     user_sessions[user_id] = row
@@ -151,8 +152,12 @@ async def select_block(message: types.Message):
     if not tasks:
         await message.answer("Завдань не знайдено для цього блоку.")
         return
-    tasks_text = "\n".join([f"— {t['time']}: {t['task']} ({t['desc']})" for t in tasks])
-    await message.answer(f"Я буду нагадувати тобі про кожне завдання у потрібний час. Ось твій список:\n\n{tasks_text}")
+# Список завдань (в select_block)
+tasks_text = "\n".join([f"— {t['time']}: {t['desc']}" for t in tasks])
+await message.answer(f"Я буду сповіщати тебе про виконання кожного завдання у потрібний час. Ось повний список нагадувань:\n\n{tasks_text}")
+
+# Відправка нагадування
+async def send_reminder(user_id, task, desc, row):
 
     schedule_reminders_for_user(user_id, block_num, tasks)
 

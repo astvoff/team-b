@@ -37,8 +37,11 @@ def get_today():
 def get_blocks_count():
     records = sheet.get_all_records()
     today = get_today()
-    blocks = {str(rec["Блок"]) for rec in records if str(rec["Дата"]) == today}
-    return sorted(list(blocks))
+    blocks = set()
+    for rec in records:
+        if str(rec["Дата"]) == today:
+            blocks.add(str(rec["Блок"]))
+    return sorted(list(blocks), key=lambda x: int(x))
 
 def get_block_tasks(block, user_id):
     records = sheet.get_all_records()
@@ -111,14 +114,16 @@ async def start_cmd(message: types.Message):
     )
     await message.answer("Вітаю! Натисніть «Розпочати день» щоб вибрати свій блок.", reply_markup=kb)
 
-@dp.message(F.text == 'Розпочати день')
+@dp.message(lambda msg: msg.text == 'Розпочати день')
 async def choose_blocks(message: types.Message):
     blocks = get_blocks_count()
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[[types.KeyboardButton(text=f"{b} блок")] for b in blocks],
-        resize_keyboard=True
-    )
-    await message.answer("Скільки блоків сьогодні працює? Обери свій блок:", reply_markup=kb)
+    if not blocks:
+        await message.answer("Немає доступних блоків на сьогодні.")
+        return
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    for b in blocks:
+        kb.add(KeyboardButton(f"{b} блок"))
+    await message.answer(f"Скільки блоків сьогодні працює? Обери свій блок:", reply_markup=kb)
 
 @dp.message(F.text.regexp(r'^\d+ блок$'))
 async def select_block(message: types.Message):

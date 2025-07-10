@@ -23,7 +23,7 @@ gs = gspread.authorize(creds)
 
 # ВАЖЛИВО! Тут ВСТАВ свій KEY/URL (див. попереднє пояснення)
 SHEET_KEY = '1GcXTzTFPYcisYjup9BoqEUQqGOoLlWnhpQJRQ82vi44'  # Наприклад, 1uI9AxAAwAEtwQbc9qEZI6UZXsL1g4l4gtyPGIbRHj1z
-sheet = gs.open_by_key(SHEET_KEY).sheets1
+sheet = gs.open(SHEET_NAME).worksheet('Tasks')
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()

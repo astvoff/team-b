@@ -9,32 +9,34 @@ from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 
-# Завантаження .env
+# --- Завантаження .env
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 SHEET_KEY = os.getenv('SHEET_KEY')
 
 logging.basicConfig(level=logging.INFO)
 
-# Google Sheets авторизація
+# --- Google Sheets авторизація
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
 gs = gspread.authorize(creds)
-sheet = gs.open_by_key(SHEET_KEY).worksheet('Tasks')  # Точно має бути Tasks, або заміни тут
+sheet = gs.open_by_key(SHEET_KEY).worksheet('Tasks')  # Або зміни 'Tasks' на свою назву
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 scheduler = AsyncIOScheduler()
 user_sessions = {}
 
-# === ЧАС УКРАЇНИ ===
+# === ЧАС УКРАЇНИ (timezone-aware) ===
+UA_TZ = timezone(timedelta(hours=3))
+
 def now_ua():
-    # Повертає поточний час у Києві (UTC+3)
-    return datetime.now(timezone.utc) + timedelta(hours=3)
+    # Повертає поточний час у Києві (timezone-aware)
+    return datetime.now(timezone.utc).astimezone(UA_TZ)
 
 def get_today():
     # Формат YYYY-MM-DD, дата саме для Києва
-    return (datetime.now(timezone.utc) + timedelta(hours=3)).strftime('%Y-%m-%d')
+    return now_ua().strftime('%Y-%m-%d')
 
 def get_blocks_count():
     try:
@@ -89,7 +91,10 @@ async def send_reminder(user_id, task, desc, row):
 
 def schedule_reminders_for_user(user_id, block_num, tasks):
     for task in tasks:
-        remind_time = datetime.strptime(f"{get_today()} {task['time']}", '%Y-%m-%d %H:%M')
+        # Створюємо timezone-aware remind_time для Києва
+        remind_time = datetime.strptime(
+            f"{get_today()} {task['time']}", '%Y-%m-%d %H:%M'
+        ).replace(tzinfo=UA_TZ)
         now = now_ua()
         print(f"DEBUG: Reminder set for {remind_time}, now: {now}")
         if remind_time <= now:

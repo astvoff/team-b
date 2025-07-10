@@ -1,2 +1,5 @@
-python-telegram-bot[job-queue]==20.8
-pytz
+aiogram
+gspread
+oauth2client
+apscheduler
+python-dotenv

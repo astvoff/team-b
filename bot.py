@@ -32,7 +32,7 @@ scheduler = AsyncIOScheduler()
 user_sessions = {}
 
 def get_today():
-    return datetime.now().strftime('%Y-%m-%d')
+ datetime.now(tz=datetime.timezone.utc) + timedelta(hours=3)  # якщо ти в UTC+3
 
 def get_blocks_count():
     records = sheet.get_all_records()

@@ -12,21 +12,20 @@ from datetime import datetime, timedelta, timezone
 # Завантаження .env
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
+SHEET_KEY = os.getenv('SHEET_KEY')  # ID Google Таблиці (можна взяти з url)
 
 # Логування
 logging.basicConfig(level=logging.INFO)
 
-# Google Sheets
+# Google Sheets авторизація
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
 gs = gspread.authorize(creds)
-SHEET_KEY = os.getenv('SHEET_KEY')  # Тепер з .env, щоб не палити публічно
-sheet = gs.open_by_key(SHEET_KEY).worksheet('Tasks')  # Явно вказуємо лист
+sheet = gs.open_by_key(SHEET_KEY).worksheet('Tasks')  # Вкажи точну назву листа у Google Таблиці
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 scheduler = AsyncIOScheduler()
-
 user_sessions = {}
 
 def get_today():
@@ -40,10 +39,9 @@ def get_blocks_count():
         today = get_today()
         blocks = set()
         for rec in records:
-            # Порівняння дати як рядків (у таблиці і у бота)
             if str(rec["Дата"]) == today:
                 blocks.add(str(rec["Блок"]))
-        # Якщо з таблиці не зчитались — повертаємо для тесту ["1", "2", "3"]
+        # Якщо блоки не знайдено, для тесту віддамо ["1", "2", "3"]
         return sorted(list(blocks), key=lambda x: int(x)) if blocks else ["1", "2", "3"]
     except Exception as e:
         print("DEBUG get_blocks_count error:", e)
@@ -74,19 +72,9 @@ def assign_user_to_block(block, user_id):
 def mark_task_done(row):
     sheet.update_cell(row, 7, "TRUE")
 
-def get_block_for_user(user_id):
-    records = sheet.get_all_records()
-    today = get_today()
-    for rec in records:
-        if str(rec["Дата"]) == today and str(rec["Telegram ID"]) == str(user_id):
-            return rec["Блок"]
-    return None
-
 async def send_reminder(user_id, task, desc, row):
     kb = types.ReplyKeyboardMarkup(
-        keyboard=[
-            [types.KeyboardButton(text='✅ Виконано')]
-        ],
+        keyboard=[[types.KeyboardButton(text='✅ Виконано')]],
         resize_keyboard=True
     )
     await bot.send_message(
@@ -113,9 +101,7 @@ def schedule_reminders_for_user(user_id, block_num, tasks):
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):
     kb = types.ReplyKeyboardMarkup(
-        keyboard=[
-            [types.KeyboardButton(text='Розпочати день')]
-        ],
+        keyboard=[[types.KeyboardButton(text='Розпочати день')]],
         resize_keyboard=True
     )
     await message.answer("Вітаю! Натисніть «Розпочати день» щоб вибрати свій блок.", reply_markup=kb)
@@ -126,9 +112,10 @@ async def choose_blocks(message: types.Message):
     if not blocks:
         await message.answer("Немає доступних блоків на сьогодні.")
         return
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    for b in blocks:
-        kb.add(types.KeyboardButton(f"{b} блок"))
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=[[types.KeyboardButton(text=f"{b} блок")] for b in blocks],
+        resize_keyboard=True
+    )
     await message.answer(f"Скільки блоків сьогодні працює? Обери свій блок:", reply_markup=kb)
 
 @dp.message(F.text.regexp(r'^\d+ блок$'))
@@ -158,23 +145,16 @@ async def select_block(message: types.Message):
 
     schedule_reminders_for_user(user_id, block_num, tasks)
 
-@dp.message()
-async def universal_handler(message: types.Message):
-    text = message.text.strip().lower()
-    if text == 'розпочати день':
-        blocks = get_blocks_count()
-        await message.answer(f"DEBUG: blocks = {blocks}")  # Тимчасово для діагностики
-        if not blocks:
-            await message.answer("Немає доступних блоків на сьогодні.")
-            return
-        kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-        for b in blocks:
-            kb.add(types.KeyboardButton(f"{b} блок"))
-        await message.answer("Скільки блоків сьогодні працює? Обери свій блок:", reply_markup=kb)
-    elif text.endswith('блок'):
-        await message.answer("Ти натиснув блок!")
-    else:
-        await message.answer("Оберіть дію з меню.")
+@dp.message(F.text == '✅ Виконано')
+async def mark_done(message: types.Message):
+    user_id = message.from_user.id
+    row = user_sessions.get(user_id)
+    if not row:
+        await message.answer("Помилка: завдання не знайдено.")
+        return
+    mark_task_done(row)
+    await message.answer("Відмічено як виконане ✅", reply_markup=types.ReplyKeyboardRemove())
+    user_sessions[user_id] = None
 
 async def main():
     scheduler.start()

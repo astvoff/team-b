@@ -158,16 +158,23 @@ async def select_block(message: types.Message):
 
     schedule_reminders_for_user(user_id, block_num, tasks)
 
-@dp.message(F.text == '✅ Виконано')
-async def mark_done(message: types.Message):
-    user_id = message.from_user.id
-    row = user_sessions.get(user_id)
-    if not row:
-        await message.answer("Помилка: завдання не знайдено.")
-        return
-    mark_task_done(row)
-    await message.answer("Відмічено як виконане ✅", reply_markup=types.ReplyKeyboardRemove())
-    user_sessions[user_id] = None
+@dp.message()
+async def universal_handler(message: types.Message):
+    text = message.text.strip().lower()
+    if text == 'розпочати день':
+        blocks = get_blocks_count()
+        await message.answer(f"DEBUG: blocks = {blocks}")  # Тимчасово для діагностики
+        if not blocks:
+            await message.answer("Немає доступних блоків на сьогодні.")
+            return
+        kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+        for b in blocks:
+            kb.add(types.KeyboardButton(f"{b} блок"))
+        await message.answer("Скільки блоків сьогодні працює? Обери свій блок:", reply_markup=kb)
+    elif text.endswith('блок'):
+        await message.answer("Ти натиснув блок!")
+    else:
+        await message.answer("Оберіть дію з меню.")
 
 async def main():
     scheduler.start()

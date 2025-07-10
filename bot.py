@@ -87,7 +87,9 @@ async def send_reminder(user_id, task, desc, row):
 def schedule_reminders_for_user(user_id, block_num, tasks):
     for task in tasks:
         remind_time = datetime.strptime(f"{get_today()} {task['time']}", '%Y-%m-%d %H:%M')
+        print(f"DEBUG: Reminder set for {remind_time}, task: {task['task']}, now: {datetime.now()}")
         if remind_time < datetime.now():
+            print("DEBUG: Time has passed, skip.")
             continue
         scheduler.add_job(
             send_reminder,

@@ -12,26 +12,29 @@ from datetime import datetime, timedelta, timezone
 # Завантаження .env
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-SHEET_KEY = os.getenv('SHEET_KEY')  # ID Google Таблиці (можна взяти з url)
+SHEET_KEY = os.getenv('SHEET_KEY')
 
-# Логування
 logging.basicConfig(level=logging.INFO)
 
 # Google Sheets авторизація
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
 gs = gspread.authorize(creds)
-sheet = gs.open_by_key(SHEET_KEY).worksheet('Tasks')  # Вкажи точну назву листа у Google Таблиці
+sheet = gs.open_by_key(SHEET_KEY).worksheet('Tasks')  # Точно має бути Tasks, або заміни тут
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 scheduler = AsyncIOScheduler()
 user_sessions = {}
 
+# === ЧАС УКРАЇНИ ===
+def now_ua():
+    # Повертає поточний час у Києві (UTC+3)
+    return datetime.now(timezone.utc) + timedelta(hours=3)
+
 def get_today():
-    # Український час (UTC+3)
-    ua_time = datetime.now(timezone.utc) + timedelta(hours=3)
-    return ua_time.strftime('%Y-%m-%d')
+    # Формат YYYY-MM-DD
+    return now_ua().strftime('%Y-%m-%d')
 
 def get_blocks_count():
     try:
@@ -41,7 +44,6 @@ def get_blocks_count():
         for rec in records:
             if str(rec["Дата"]) == today:
                 blocks.add(str(rec["Блок"]))
-        # Якщо блоки не знайдено, для тесту віддамо ["1", "2", "3"]
         return sorted(list(blocks), key=lambda x: int(x)) if blocks else ["1", "2", "3"]
     except Exception as e:
         print("DEBUG get_blocks_count error:", e)
@@ -73,6 +75,7 @@ def mark_task_done(row):
     sheet.update_cell(row, 7, "TRUE")
 
 async def send_reminder(user_id, task, desc, row):
+    print(f"DEBUG: Sending reminder for user_id={user_id}, task={task}")
     kb = types.ReplyKeyboardMarkup(
         keyboard=[[types.KeyboardButton(text='✅ Виконано')]],
         resize_keyboard=True
@@ -87,8 +90,9 @@ async def send_reminder(user_id, task, desc, row):
 def schedule_reminders_for_user(user_id, block_num, tasks):
     for task in tasks:
         remind_time = datetime.strptime(f"{get_today()} {task['time']}", '%Y-%m-%d %H:%M')
-        print(f"DEBUG: Reminder set for {remind_time}, task: {task['task']}, now: {datetime.now()}")
-        if remind_time < datetime.now():
+        now = now_ua()
+        print(f"DEBUG: Reminder set for {remind_time}, now: {now}")
+        if remind_time <= now:
             print("DEBUG: Time has passed, skip.")
             continue
         scheduler.add_job(
@@ -96,7 +100,7 @@ def schedule_reminders_for_user(user_id, block_num, tasks):
             'date',
             run_date=remind_time,
             args=[user_id, task["task"], task["desc"], task["row"]],
-            id=f"{user_id}-{task['row']}",
+            id=f"{user_id}-{task['row']}-{int(remind_time.timestamp())}",
             replace_existing=True
         )
 

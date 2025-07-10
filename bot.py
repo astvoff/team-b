@@ -148,13 +148,16 @@ async def select_block(message: types.Message):
     user_sessions[user_id] = block_num
     await message.answer(f"Супер! Твої задачі на сьогодні в блоці {block_num} 👇", reply_markup=types.ReplyKeyboardRemove())
 
+   @dp.message(F.text.regexp(r'^\d+ блок$'))
+async def select_block(message: types.Message):
+    # ...
     tasks = get_block_tasks(block_num, user_id)
     if not tasks:
         await message.answer("Завдань не знайдено для цього блоку.")
         return
-# Список завдань (в select_block)
-tasks_text = "\n".join([f"— {t['time']}: {t['desc']}" for t in tasks])
-await message.answer(f"Я буду сповіщати тебе про виконання кожного завдання у потрібний час. Ось повний список нагадувань:\n\n{tasks_text}")
+    tasks_text = "\n".join([f"— {t['time']}: {t['desc']}" for t in tasks])
+    await message.answer(f"Я буду нагадувати тобі про кожне завдання у потрібний час. Ось твій список нагадувань:\n\n{tasks_text}")
+    schedule_reminders_for_user(user_id, block_num, tasks)
 
 # Відправка нагадування
 async def send_reminder(user_id, task, desc, row):

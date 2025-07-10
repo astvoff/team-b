@@ -1,217 +1,168 @@
 import os
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+import logging
+import asyncio
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.filters import CommandStart
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
-TOKEN = os.environ.get("TOKEN")
+# Load .env
+load_dotenv()
+BOT_TOKEN = os.getenv('BOT_TOKEN')
 
-BLOCK_TASKS = {
-    6: {
-        "1": ["Черговий (-a)", "Вітрини/Шоуруми", "Запити Сайту"],
-        "2": ["Замовлення сайту", "Перевірка переміщень", "Запити Сайту"],
-        "3": ["Замовлення наші", "Стіна аксесуарів", "Прийомка товару"],
-        "4": ["OLX", "Стани техніка і тел.", "Прийомка товару"],
-        "5": ["Цінники", "Зарядка телефонів", "Звіт-витрати", "Прийомка товару"],
-        "6": ["Каса", 'Запити "Нова Техніка"', 'Запити "Акси"']
-    },
-    # Додай аналогічно 7, 8, 9 блоки!
-}
+# Logging
+logging.basicConfig(level=logging.INFO)
 
-SUBTASKS = {
-    "Замовлення сайту": [
-        "Перевірити актуальність, уточнити у менеджера сайта",
-        "Всі замовлення мають стікер з № замовлення",
-        "Зарядити вживані телефони",
-        "Вживані телефони в фірмових коробках",
-        "Все відкладено на поличці замовлень",
-        "Перевірити закази на складі"
-    ],
-    "Замовлення наші": [
-        "Звірити товар факт/база",
-        "Проінформувати клієнта про наявність (за потреби)",
-        "Поновити резерви (за потреби)",
-        "Техніка підписана відповідальним",
-        "Зарядити б/у телефони",
-        "Неактуальні закази закрити"
-    ],
-    # ... додай свої підзавдання для кожного завдання, де це потрібно
-}
+# Google Sheets setup
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+gs = gspread.authorize(creds)
+SHEET_NAME = 'Tasks'
+sheet = gs.open(SHEET_NAME).sheet1
 
-user_state = {}
+# Init bot
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+scheduler = AsyncIOScheduler()
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_state[user_id] = {"state": "idle"}
-    kb = [[KeyboardButton("▶️ Початок робочого дня")]]
-    await update.message.reply_text(
-        "Натисніть «Початок робочого дня», щоб розпочати.",
-        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-    )
+# Store user session data
+user_sessions = {}
 
-async def main_menu(update, context):
-    user_id = update.effective_user.id
-    kb = [[KeyboardButton(str(i))] for i in [6, 7, 8, 9]]
-    await update.message.reply_text(
-        "Оберіть кількість працівників на зміні:",
-        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-    )
-    user_state[user_id]["state"] = "select_workers"
+# --- Helper Functions --- #
 
-async def select_block(update, context):
-    user_id = update.effective_user.id
-    workers = int(update.message.text)
-    user_state[user_id]["workers"] = workers
-    user_state[user_id]["state"] = "select_block"
-    kb = [[KeyboardButton(str(i))] for i in BLOCK_TASKS[workers].keys()]
-    kb.append([KeyboardButton("⬅️ Назад")])
-    await update.message.reply_text(
-        "Оберіть свій блок:",
-        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-    )
+def get_today():
+    return datetime.now().strftime('%Y-%m-%d')
 
-async def confirm_block(update, context):
-    user_id = update.effective_user.id
-    block = update.message.text
-    user_state[user_id]["block"] = block
-    user_state[user_id]["state"] = "confirm_block"
-    kb = [
-        [KeyboardButton(f"✅ Так, блок {block}")],
-        [KeyboardButton("⬅️ Назад")]
-    ]
-    await update.message.reply_text(
-        f"Ви впевнені, що обрали блок {block}? Після підтвердження змінити не можна.",
-        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-    )
+def get_blocks_count():
+    # повертає максимальне значення блока за сьогодні
+    records = sheet.get_all_records()
+    today = get_today()
+    blocks = {str(rec["Блок"]) for rec in records if str(rec["Дата"]) == today}
+    return sorted(list(blocks))
 
-async def block_tasks(update, context):
-    user_id = update.effective_user.id
-    workers = user_state[user_id]["workers"]
-    block = user_state[user_id]["block"]
-    tasks = BLOCK_TASKS[workers][block]
-    # Якщо state вже tasks -- не перезаписувати completed_tasks, щоб після повернення зберігались виконані
-    if user_state[user_id].get("state") != "tasks":
-        user_state[user_id]["tasks"] = {t: False for t in tasks}
-        user_state[user_id]["completed_tasks"] = set()
-    user_state[user_id]["state"] = "tasks"
-    left_tasks = [t for t in tasks if not user_state[user_id]["tasks"][t]]
-    if left_tasks:
-        kb = [[KeyboardButton(t)] for t in left_tasks]
-        kb.append([KeyboardButton("⬅️ Назад")])
-        await update.message.reply_text(
-            "Оберіть завдання:",
-            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+def get_block_tasks(block, user_id):
+    records = sheet.get_all_records()
+    today = get_today()
+    tasks = []
+    for rec in records:
+        if str(rec["Дата"]) == today and str(rec["Блок"]) == str(block):
+            tasks.append({
+                "row": records.index(rec)+2,  # +2 бо get_all_records не враховує заголовки
+                "time": rec["Час"],
+                "task": rec["Завдання"],
+                "desc": rec["Опис"],
+                "done": rec["Виконано"],
+            })
+    return tasks
+
+def assign_user_to_block(block, user_id):
+    # Записує Telegram ID у всі завдання блоку на сьогодні
+    records = sheet.get_all_records()
+    today = get_today()
+    for i, rec in enumerate(records):
+        if str(rec["Дата"]) == today and str(rec["Блок"]) == str(block):
+            sheet.update_cell(i+2, 3, str(user_id)) # колонка 3 - Telegram ID
+
+def mark_task_done(row):
+    # Позначає завдання як виконане (TRUE) по row
+    sheet.update_cell(row, 7, "TRUE") # колонка 7 - Виконано
+
+def get_block_for_user(user_id):
+    records = sheet.get_all_records()
+    today = get_today()
+    for rec in records:
+        if str(rec["Дата"]) == today and str(rec["Telegram ID"]) == str(user_id):
+            return rec["Блок"]
+    return None
+
+# --- Bot Handlers --- #
+
+@dp.message(CommandStart())
+async def start_cmd(message: types.Message):
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add(KeyboardButton('Розпочати день'))
+    await message.answer("Вітаю! Натисніть «Розпочати день» щоб вибрати свій блок.", reply_markup=kb)
+
+@dp.message(lambda msg: msg.text == 'Розпочати день')
+async def choose_blocks(message: types.Message):
+    blocks = get_blocks_count()
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    for b in blocks:
+        kb.add(KeyboardButton(f"{b} блок"))
+    await message.answer(f"Скільки блоків сьогодні працює? Обери свій блок:", reply_markup=kb)
+
+@dp.message(lambda msg: msg.text and msg.text.endswith('блок'))
+async def select_block(message: types.Message):
+    block_num = message.text.split()[0]
+    user_id = message.from_user.id
+
+    # Перевірка, чи блок вже зайнятий
+    records = sheet.get_all_records()
+    today = get_today()
+    for rec in records:
+        if str(rec["Дата"]) == today and str(rec["Блок"]) == block_num and rec["Telegram ID"]:
+            if str(rec["Telegram ID"]) == str(user_id):
+                await message.answer("Цей блок вже закріплений за вами.")
+                return
+            else:
+                await message.answer("Цей блок вже зайнятий іншим працівником.")
+                return
+
+    assign_user_to_block(block_num, user_id)
+    user_sessions[user_id] = block_num
+    await message.answer(f"Супер! Твої задачі на сьогодні в блоці {block_num} 👇", reply_markup=ReplyKeyboardRemove())
+
+    tasks = get_block_tasks(block_num, user_id)
+    tasks_text = "\n".join([f"— {t['time']}: {t['task']} ({t['desc']})" for t in tasks])
+    await message.answer(f"Я буду нагадувати тобі про кожне завдання у потрібний час. Ось твій список:\n\n{tasks_text}")
+
+    # Запускаємо нагадування для цього юзера
+    schedule_reminders_for_user(user_id, block_num, tasks)
+
+def schedule_reminders_for_user(user_id, block_num, tasks):
+    for task in tasks:
+        remind_time = datetime.strptime(f"{get_today()} {task['time']}", '%Y-%m-%d %H:%M')
+        if remind_time < datetime.now():
+            continue  # не надсилати, якщо час вже минув
+        scheduler.add_job(
+            send_reminder,
+            'date',
+            run_date=remind_time,
+            args=[user_id, task["task"], task["desc"], task["row"]],
+            id=f"{user_id}-{task['row']}",
+            replace_existing=True
         )
-    else:
-        await update.message.reply_text(
-            "Всі завдання виконані! Дякуємо 🎉",
-            reply_markup=ReplyKeyboardMarkup(
-                [[KeyboardButton("⬅️ Назад")]],
-                resize_keyboard=True
-            )
-        )
 
-async def handle_task(update, context):
-    user_id = update.effective_user.id
-    text = update.message.text
-    # Якщо є підзавдання
-    if text in SUBTASKS:
-        user_state[user_id]["state"] = "subtasks"
-        user_state[user_id]["current_task"] = text
-        user_state[user_id]["current_subtasks"] = {s: False for s in SUBTASKS[text]}
-        left_sub = [s for s in SUBTASKS[text] if not user_state[user_id]["current_subtasks"][s]]
-        kb = [[KeyboardButton(s)] for s in left_sub]
-        kb.append([KeyboardButton("⬅️ Назад")])
-        await update.message.reply_text(
-            f"Підзавдання для «{text}»:",
-            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-        )
-    else:
-        # Якщо підзавдань немає
-        user_state[user_id]["tasks"][text] = True
-        user_state[user_id]["completed_tasks"].add(text)
-        user_state[user_id]["state"] = "task_done"
-        kb = [[KeyboardButton("Перейти до інших завдань")]]
-        await update.message.reply_text(
-            f"Завдання «{text}» виконано!",
-            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-        )
+async def send_reminder(user_id, task, desc, row):
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add(KeyboardButton('✅ Виконано'))
+    await bot.send_message(
+        user_id,
+        f"Нагадування: {task}\n\n{desc}\n\nПісля виконання натисни «✅ Виконано».",
+        reply_markup=kb
+    )
+    # Зберігаємо row для відмітки виконання
+    user_sessions[user_id] = row
 
-async def handle_subtask(update, context):
-    user_id = update.effective_user.id
-    text = update.message.text
-    state = user_state[user_id]
-    if text == "⬅️ Назад":
-        user_state[user_id]["state"] = "tasks"
-        return await block_tasks(update, context)
-    if text == "Перейти до інших завдань":
-        user_state[user_id]["state"] = "tasks"
-        return await block_tasks(update, context)
-    if text in state["current_subtasks"]:
-        state["current_subtasks"][text] = True
-        left = [s for s, done in state["current_subtasks"].items() if not done]
-        if left:
-            kb = [[KeyboardButton(s)] for s in left]
-            kb.append([KeyboardButton("⬅️ Назад")])
-            await update.message.reply_text(
-                f"Залишилось підзавдань: {len(left)}",
-                reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-            )
-        else:
-            # всі підзавдання виконані
-            main_task = state["current_task"]
-            state["tasks"][main_task] = True
-            state["completed_tasks"].add(main_task)
-            del state["current_subtasks"]
-            del state["current_task"]
-            user_state[user_id]["state"] = "subtasks_done"
-            kb = [[KeyboardButton("Перейти до інших завдань")]]
-            await update.message.reply_text(
-                f"Всі підзавдання виконані! Завдання «{main_task}» закрито.",
-                reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
-            )
+@dp.message(lambda msg: msg.text == '✅ Виконано')
+async def mark_done(message: types.Message):
+    user_id = message.from_user.id
+    row = user_sessions.get(user_id)
+    if not row:
+        await message.answer("Помилка: завдання не знайдено.")
+        return
+    mark_task_done(row)
+    await message.answer("Відмічено як виконане ✅", reply_markup=ReplyKeyboardRemove())
+    user_sessions[user_id] = None
 
-async def main_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text = update.message.text
-    state = user_state.get(user_id, {"state": "idle"})["state"]
-
-    if text == "/start":
-        return await start(update, context)
-    if text == "▶️ Початок робочого дня":
-        return await main_menu(update, context)
-    if state == "select_workers":
-        if text.isdigit() and int(text) in BLOCK_TASKS:
-            return await select_block(update, context)
-    if state == "select_block":
-        if text == "⬅️ Назад":
-            return await main_menu(update, context)
-        if text in BLOCK_TASKS[user_state[user_id]["workers"]]:
-            return await confirm_block(update, context)
-    if state == "confirm_block":
-        if text == "⬅️ Назад":
-            return await select_block(update, context)
-        if text.startswith("✅ Так, блок"):
-            return await block_tasks(update, context)
-    if state == "tasks":
-        if text == "⬅️ Назад":
-            return await confirm_block(update, context)
-        if text in user_state[user_id]["tasks"] and not user_state[user_id]["tasks"][text]:
-            return await handle_task(update, context)
-    if state == "subtasks":
-        return await handle_subtask(update, context)
-    if state == "subtasks_done":
-        if text == "Перейти до інших завдань":
-            user_state[user_id]["state"] = "tasks"
-            return await block_tasks(update, context)
-    if state == "task_done":
-        if text == "Перейти до інших завдань":
-            user_state[user_id]["state"] = "tasks"
-            return await block_tasks(update, context)
-
-def main():
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), main_handler))
-    app.add_handler(CommandHandler("start", start))
-    app.run_polling()
+# --- Main --- #
+async def main():
+    scheduler.start()
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

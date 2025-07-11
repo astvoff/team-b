@@ -14,6 +14,8 @@ class PersonalReminderState(StatesGroup):
     wait_type = State()
     wait_text = State()
     wait_time = State()
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command
 
 # === Константи та ініціалізація ===
 load_dotenv()
@@ -232,6 +234,13 @@ async def edit_task_save(message: types.Message, state: FSMContext):
     day_sheet.update_cell(data["row_idx"], 6, time_str)  # "Час"
     await message.answer("✅ Нагадування та час оновлено!")
     await state.clear()
+
+@dp.message(Command("admin"))
+async def admin_menu(message: types.Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔️ Доступ лише для адміністратора.")
+        return
+    await message.answer("🔧 <b>Адмін-меню</b>", reply_markup=admin_menu_kb, parse_mode="HTML")
 
 # --- Інші налаштування ---
 @dp.callback_query(lambda c: c.data == "admin_other_settings")

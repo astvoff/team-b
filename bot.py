@@ -18,11 +18,12 @@ from datetime import datetime, timedelta, timezone
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 SHEET_KEY = os.getenv('SHEET_KEY')
+GENERAL_REMINDERS_SHEET = 'Загальні нагадування'
+general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
 UA_TZ = timezone(timedelta(hours=3))  # Київ
 REMINDER_REPEAT_MINUTES = 20
 ADMIN_NOTIFY_MINUTES = 30
 ADMIN_IDS = [438830182]   # <-- твій Telegram ID
-
 logging.basicConfig(level=logging.INFO)
 
 
@@ -247,6 +248,51 @@ class PersonalReminderState(StatesGroup):
     wait_text = State()
     wait_time = State()
 
+def get_today_users():
+    """Отримати Telegram ID тих, хто обрав блок сьогодні."""
+    today = get_today()
+    records = day_sheet.get_all_records()
+    user_ids = set()
+    for row in records:
+        if str(row.get("Дата")) == today and row.get("Telegram ID"):
+            user_ids.add(int(row["Telegram ID"]))
+    return list(user_ids)
+
+async def send_general_reminder(text):
+    for user_id in get_today_users():
+        try:
+            await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
+        except Exception as e:
+            logging.warning(f"Cannot send to user {user_id}: {e}")
+
+def schedule_general_reminders():
+    rows = general_reminders_sheet.get_all_records()
+    days_map = {
+        "понеділок": 0, "вівторок": 1, "середа": 2,
+        "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
+        "субота": 5, "неділя": 6
+    }
+    for row in rows:
+        day = row.get('День', '').strip().lower()
+        time_str = row.get('Час', '').strip()
+        text = row.get('Текст', '').strip()
+        if not day or not time_str or not text:
+            continue
+        weekday_num = days_map.get(day)
+        if weekday_num is None:
+            continue
+        hour, minute = map(int, time_str.split(":"))
+        scheduler.add_job(
+            send_general_reminder,
+            'cron',
+            day_of_week=weekday_num,
+            hour=hour,
+            minute=minute,
+            args=[text],
+            id=f"general-{day}-{hour}-{minute}",
+            replace_existing=True
+        )
+
 @dp.message(lambda msg: msg.text == "Створити нагадування")
 async def create_reminder_start(message: types.Message, state: FSMContext):
     await message.answer("Вкажіть вид завдання (наприклад, 'Особисте', 'Для магазину' тощо):")
@@ -439,6 +485,11 @@ async def universal_back(message: types.Message, state: FSMContext):
 # --- Запуск ---
 async def main():
     scheduler.start()
+    await dp.start_polling(bot)
+
+async def main():
+    scheduler.start()
+    schedule_general_reminders()  # Додаємо планування загальних нагадувань
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

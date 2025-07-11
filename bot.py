@@ -53,8 +53,6 @@ async def admin_menu(message: types.Message):
         await message.answer("⛔️ Доступ лише для адміністратора.")
         return
 
-   from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 admin_menu_kb = ReplyKeyboardMarkup(

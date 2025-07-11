@@ -48,6 +48,7 @@ user_menu = types.ReplyKeyboardMarkup(
         [types.KeyboardButton(text="Розпочати день")],
         [types.KeyboardButton(text="Створити нагадування")],
         [types.KeyboardButton(text="Список моїх завдань")],
+        [types.KeyboardButton(text='База знань')],
         [types.KeyboardButton(text="Назад")],
         [types.KeyboardButton(text="Завершити день")]
     ],
@@ -352,6 +353,14 @@ async def create_reminder_time(message: types.Message, state: FSMContext):
     await message.answer(f"✅ Особисте нагадування встановлено на {reminder_time}!\n"
                          "Вам прийде повідомлення у зазначений час.", reply_markup=user_menu)
     await state.clear()
+
+@dp.message(lambda msg: msg.text and msg.text.lower() == "база знань")
+async def knowledge_base_placeholder(message: types.Message):
+    await message.answer(
+        "🗂 Функція 'База знань' незабаром стане доступною!\n"
+        "Тут можна буде знаходити важливі посилання, інструкції, документи та іншу інформацію для роботи."
+    )
+
 
     # Плануємо нагадування
     remind_dt = datetime.strptime(f"{today} {reminder_time}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)

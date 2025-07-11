@@ -187,35 +187,44 @@ def schedule_reminders_for_user(user_id, tasks):
     for t in tasks:
         if not t["time"]:
             continue
-        remind_time = datetime.strptime(f"{get_today()} {t['time']}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
-        now = now_ua()
-        if remind_time <= now:
-            continue
-        block = t.get("block") or t.get("Блок") or "?"
-        scheduler.add_job(
-            send_reminder,
-            'date',
-            run_date=remind_time,
-            args=[user_id, t["task"], t["reminder"], t["row"]],
-            id=f"{user_id}-{t['row']}-{int(remind_time.timestamp())}",
-            replace_existing=True
-        )
-        scheduler.add_job(
-            repeat_reminder_if_needed,
-            'date',
-            run_date=remind_time + timedelta(minutes=REMINDER_REPEAT_MINUTES),
-            args=[user_id, t["row"], t["task"], t["reminder"], block],
-            id=f"repeat-{user_id}-{t['row']}-{int(remind_time.timestamp())}",
-            replace_existing=True
-        )
-        scheduler.add_job(
-            notify_admin_if_needed,
-            'date',
-            run_date=remind_time + timedelta(minutes=ADMIN_NOTIFY_MINUTES),
-            args=[user_id, t["row"], t["task"], t["reminder"], block],
-            id=f"admin-{user_id}-{t['row']}-{int(remind_time.timestamp())}",
-            replace_existing=True
-        )
+        # Якщо кілька часів у комірці (через кому)
+        times = [tm.strip() for tm in t["time"].split(",") if tm.strip()]
+        for time_str in times:
+            try:
+                remind_time = datetime.strptime(f"{get_today()} {time_str}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
+            except Exception:
+                continue
+            now = now_ua()
+            if remind_time <= now:
+                continue
+            block = t.get("block") or t.get("Блок") or "?"
+            # Основне нагадування
+            scheduler.add_job(
+                send_reminder,
+                'date',
+                run_date=remind_time,
+                args=[user_id, t["task"], t["reminder"], t["row"]],
+                id=f"{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
+                replace_existing=True
+            )
+            # Повторне нагадування через 20 хв
+            scheduler.add_job(
+                repeat_reminder_if_needed,
+                'date',
+                run_date=remind_time + timedelta(minutes=REMINDER_REPEAT_MINUTES),
+                args=[user_id, t["row"], t["task"], t["reminder"], block],
+                id=f"repeat-{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
+                replace_existing=True
+            )
+            # Адміну через 30 хв
+            scheduler.add_job(
+                notify_admin_if_needed,
+                'date',
+                run_date=remind_time + timedelta(minutes=ADMIN_NOTIFY_MINUTES),
+                args=[user_id, t["row"], t["task"], t["reminder"], block],
+                id=f"admin-{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
+                replace_existing=True
+            )
 
 # === FSM для особистого нагадування ===
 class PersonalReminderState(StatesGroup):

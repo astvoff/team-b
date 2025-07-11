@@ -259,12 +259,14 @@ def get_today_users():
     return list(user_ids)
 
 async def send_general_reminder(text):
+    print("=== send_general_reminder ===", text)
     for user_id in get_today_users():
+        print(f"Try send to {user_id}")
         try:
             await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
         except Exception as e:
             logging.warning(f"Cannot send to user {user_id}: {e}")
-
+            
 def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()
     days_map = {

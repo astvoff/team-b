@@ -10,6 +10,9 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
+import openai
+import os
+
 
 # --- Константи ---
 load_dotenv()
@@ -19,6 +22,7 @@ UA_TZ = timezone(timedelta(hours=3))  # Київ
 REMINDER_REPEAT_MINUTES = 20
 ADMIN_NOTIFY_MINUTES = 30
 ADMIN_IDS = [438830182]   # <-- твій Telegram ID
+openai.api_key = os.getenv("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")
 
 logging.basicConfig(level=logging.INFO)
 
@@ -390,6 +394,19 @@ async def select_block(message: types.Message):
         reply_markup=user_menu
     )
     schedule_reminders_for_user(user_id, tasks)
+
+@dp.message(lambda msg: msg.text and msg.text.startswith("/ai "))
+async def ai_query(message: types.Message):
+    prompt = message.text[4:].strip()
+    if not prompt:
+        await message.answer("Введіть запит після /ai ...")
+        return
+    await message.answer("⏳ ШІ думає...")
+    answer = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: asyncio.run(ask_gpt(prompt))
+    )
+    await message.answer(answer)
+
 
 # --- Запуск ---
 async def main():

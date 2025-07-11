@@ -3,4 +3,3 @@ gspread
 oauth2client
 apscheduler
 python-dotenv
-openai

@@ -18,8 +18,6 @@ from datetime import datetime, timedelta, timezone
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 SHEET_KEY = os.getenv('SHEET_KEY')
-GENERAL_REMINDERS_SHEET = 'Загальні нагадування'
-general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
 UA_TZ = timezone(timedelta(hours=3))  # Київ
 REMINDER_REPEAT_MINUTES = 20
 ADMIN_NOTIFY_MINUTES = 30
@@ -33,8 +31,10 @@ creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', sco
 gs = gspread.authorize(creds)
 TEMPLATE_SHEET = 'Шаблони блоків'
 DAY_SHEET = 'Завдання на день'
+GENERAL_REMINDERS_SHEET = 'Загальні нагадування'
 template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
 day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
+general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
 
 
 # --- Telegram бот ---

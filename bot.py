@@ -66,7 +66,6 @@ admin_menu_kb = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
-    await message.answer("🔧 <b>Адмін-меню</b>", reply_markup=kb, parse_mode="HTML")
 
 # --- Перегляд завдань на сьогодні ---
 @dp.callback_query(lambda c: c.data == "admin_tasks_today")

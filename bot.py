@@ -55,11 +55,15 @@ async def admin_menu(message: types.Message):
 
    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
 admin_menu_kb = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="📋 Завдання на день"), KeyboardButton(text="👁 Контроль виконання")],
+        [KeyboardButton(text="📋 Завдання на день")],
+        [KeyboardButton(text="👁 Контроль виконання")],
         [KeyboardButton(text="🔄 Розблокувати блок")],
-        [KeyboardButton(text="➕ Додати завдання у шаблон"), KeyboardButton(text="✏️ Редагувати завдання")],
+        [KeyboardButton(text="➕ Додати завдання у шаблон")],
+        [KeyboardButton(text="✏️ Редагувати завдання")],
         [KeyboardButton(text="🛠 Інші налаштування")],
     ],
     resize_keyboard=True

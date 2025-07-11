@@ -8,6 +8,12 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+class PersonalReminderState(StatesGroup):
+    wait_type = State()
+    wait_text = State()
+    wait_time = State()
 
 # === Константи та ініціалізація ===
 load_dotenv()
@@ -319,6 +325,56 @@ async def finish_day(message: types.Message):
                 day_sheet.update_cell(idx + 2, 10, "FALSE")
                 updated += 1
     await message.answer("Робочий день завершено! Виконання або невиконання завдання зафіксовано.", reply_markup=user_menu)
+
+@dp.message(lambda msg: msg.text == "Створити нагадування")
+async def create_reminder_start(message: types.Message, state: FSMContext):
+    await message.answer("Вкажіть вид завдання (наприклад, 'Особисте', 'Для магазину' тощо):")
+    await state.set_state(PersonalReminderState.wait_type)
+
+@dp.message(PersonalReminderState.wait_type)
+async def create_reminder_type(message: types.Message, state: FSMContext):
+    await state.update_data(reminder_type=message.text.strip())
+    await message.answer("Введіть текст нагадування:")
+    await state.set_state(PersonalReminderState.wait_text)
+
+@dp.message(PersonalReminderState.wait_text)
+async def create_reminder_text(message: types.Message, state: FSMContext):
+    await state.update_data(reminder_text=message.text.strip())
+    await message.answer("Вкажіть час нагадування у форматі HH:MM (наприклад, 14:30):")
+    await state.set_state(PersonalReminderState.wait_time)
+
+@dp.message(PersonalReminderState.wait_time)
+async def create_reminder_time(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    reminder_time = message.text.strip()
+    user_id = message.from_user.id
+    today = get_today()
+    # Додаємо у Google Таблицю
+    day_sheet.append_row([
+        today, "", "", data["reminder_type"], data["reminder_text"], reminder_time, "", user_id, ""
+    ])
+    await message.answer(f"✅ Особисте нагадування встановлено на {reminder_time}!\n"
+                         "Вам прийде повідомлення у зазначений час.", reply_markup=user_menu)
+    await state.clear()
+
+    # Плануємо нагадування
+    remind_dt = datetime.strptime(f"{today} {reminder_time}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
+    scheduler.add_job(
+        send_personal_reminder,
+        'date',
+        run_date=remind_dt,
+        args=[user_id, data["reminder_type"], data["reminder_text"], reminder_time]
+    )
+
+async def send_personal_reminder(user_id, reminder_type, reminder_text, reminder_time):
+    await bot.send_message(
+        user_id,
+        f"<b>Особисте нагадування!</b>\n"
+        f"Вид: {reminder_type}\n"
+        f"Текст: {reminder_text}\n"
+        f"Час: {reminder_time}",
+        parse_mode="HTML"
+    )
 
 # --- Тут можуть бути інші адмін-меню/фічі ---
 

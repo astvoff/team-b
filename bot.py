@@ -454,6 +454,15 @@ async def select_block(message: types.Message):
             else:
                 await message.answer("Цей блок вже зайнятий іншим працівником.")
                 return
+
+    
+@dp.callback_query(F.data.startswith('done_'))
+async def done_callback(call: types.CallbackQuery):
+    row = int(call.data.split('_')[1])        # Витягуємо номер рядка із callback_data
+    mark_task_done(row)                       # Відмічаємо завдання як виконане
+    await call.answer("Відмічено як виконане ✅")   # Короткий popup
+    await call.message.edit_reply_markup()          # Прибираємо кнопку після натискання
+    
     # Прив'язуємо
     assign_user_to_block(block_num, user_id)
     await message.answer(f"Супер! Твої нагадування на сьогодні в блоці {block_num} 👇", reply_markup=types.ReplyKeyboardRemove())
@@ -478,12 +487,6 @@ async def mark_done(message: types.Message):
     await message.answer("Відмічено як виконане ✅", reply_markup=types.ReplyKeyboardRemove())
     user_sessions[user_id] = None
 
-@dp.callback_query(F.data.startswith('done_'))
-async def done_callback(call: types.CallbackQuery):
-    row = int(call.data.split('_')[1])        # Витягуємо номер рядка із callback_data
-    mark_task_done(row)                       # Відмічаємо завдання як виконане
-    await call.answer("Відмічено як виконане ✅")   # Короткий popup
-    await call.message.edit_reply_markup()          # Прибираємо кнопку після натискання
 
 async def main():
     scheduler.start()

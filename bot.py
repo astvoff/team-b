@@ -1,39 +1,5 @@
-import os
-import logging
-import asyncio
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from dotenv import load_dotenv
-from datetime import datetime, timedelta, timezone
-
-# === Константи та ініціалізація ===
-load_dotenv()
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-SHEET_KEY = os.getenv('SHEET_KEY')
-UA_TZ = timezone(timedelta(hours=3))  # Київ
-
-logging.basicConfig(level=logging.INFO)
-
-# Авторизація Google Sheets
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
-gs = gspread.authorize(creds)
-
-TEMPLATE_SHEET = 'Шаблони блоків'
-DAY_SHEET = 'Завдання на день'
-template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
-day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
-
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-scheduler = AsyncIOScheduler()
-user_sessions = {}  # user_id: block_num
-
 # Додаємо на початок файлу:
-ADMIN_IDS = [123456789]  # <-- Вкажи свій Telegram ID, можна список для кількох адміністраторів
+ADMIN_IDS = [438830182]  # <-- Вкажи свій Telegram ID, можна список для кількох адміністраторів
 
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -225,6 +191,41 @@ async def edit_task_save(message: types.Message, state: FSMContext):
 async def admin_other_settings(call: types.CallbackQuery):
     await call.message.answer("🔧 У майбутньому тут будуть додаткові налаштування.")
     await call.answer()
+
+import os
+import logging
+import asyncio
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import CommandStart
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from dotenv import load_dotenv
+from datetime import datetime, timedelta, timezone
+
+# === Константи та ініціалізація ===
+load_dotenv()
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+SHEET_KEY = os.getenv('SHEET_KEY')
+UA_TZ = timezone(timedelta(hours=3))  # Київ
+
+logging.basicConfig(level=logging.INFO)
+
+# Авторизація Google Sheets
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+gs = gspread.authorize(creds)
+
+TEMPLATE_SHEET = 'Шаблони блоків'
+DAY_SHEET = 'Завдання на день'
+template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
+day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+scheduler = AsyncIOScheduler()
+user_sessions = {}  # user_id: block_num
+
 
 def now_ua():
     return datetime.now(timezone.utc).astimezone(UA_TZ)

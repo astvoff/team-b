@@ -42,6 +42,202 @@ dp = Dispatcher()
 scheduler = AsyncIOScheduler()
 user_sessions = {}  # user_id: block_num
 
+# admin 
+
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+
+# --- Адмін-меню / команда ---
+@dp.message(lambda msg: msg.text and (msg.text.strip().lower() == '/admin' or msg.text == 'Адмін-меню'))
+async def admin_menu(message: types.Message):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔️ Доступ лише для адміністратора.")
+        return
+
+   from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
+admin_menu_kb = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="📋 Завдання на день"), KeyboardButton(text="👁 Контроль виконання")],
+        [KeyboardButton(text="🔄 Розблокувати блок")],
+        [KeyboardButton(text="➕ Додати завдання у шаблон"), KeyboardButton(text="✏️ Редагувати завдання")],
+        [KeyboardButton(text="🛠 Інші налаштування")],
+    ],
+    resize_keyboard=True
+)
+    await message.answer("🔧 <b>Адмін-меню</b>", reply_markup=kb, parse_mode="HTML")
+
+# --- Перегляд завдань на сьогодні ---
+@dp.callback_query(lambda c: c.data == "admin_tasks_today")
+async def admin_tasks_today(call: types.CallbackQuery):
+    records = day_sheet.get_all_records()
+    today = get_today()
+    text = "<b>Завдання на сьогодні:</b>\n"
+    for row in records:
+        if str(row["Дата"]) == today:
+            status = "✅" if row.get("Виконано") == "TRUE" else "❌"
+            who = f'({row["Telegram ID"]})' if row["Telegram ID"] else ""
+            text += f'— <b>Блок {row["Блок"]}:</b> {row["Нагадування"]} {who} {status}\n'
+    await call.message.answer(text or "На сьогодні немає завдань.", parse_mode="HTML")
+    await call.answer()
+
+# --- Контроль виконання ---
+@dp.callback_query(lambda c: c.data == "admin_control_done")
+async def admin_control_done(call: types.CallbackQuery):
+    records = day_sheet.get_all_records()
+    today = get_today()
+    done, undone = [], []
+    for row in records:
+        if str(row["Дата"]) == today:
+            status = "✅" if row.get("Виконано") == "TRUE" else "❌"
+            who = f'({row["Telegram ID"]})' if row["Telegram ID"] else ""
+            line = f'Блок {row["Блок"]}: {row["Нагадування"]} {who} {status}'
+            (done if status == "✅" else undone).append(line)
+    text = "<b>Виконані:</b>\n" + ("\n".join(done) if done else "Немає") + "\n\n"
+    text += "<b>Невиконані:</b>\n" + ("\n".join(undone) if undone else "Немає")
+    await call.message.answer(text, parse_mode="HTML")
+    await call.answer()
+
+# --- Розблокувати блок (видалити Telegram ID з усіх завдань блоку на сьогодні) ---
+@dp.callback_query(lambda c: c.data == "admin_unblock")
+async def admin_unblock(call: types.CallbackQuery):
+    blocks = get_blocks_for_today()
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=f"Блок {b}", callback_data=f"unblock_{b}")] for b in blocks]
+    )
+    await call.message.answer("Оберіть блок для розблокування:", reply_markup=kb)
+    await call.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("unblock_"))
+async def do_unblock(call: types.CallbackQuery):
+    block_num = call.data.replace("unblock_", "")
+    today = get_today()
+    records = day_sheet.get_all_records()
+    for i, row in enumerate(records):
+        if str(row["Дата"]) == today and str(row["Блок"]) == str(block_num):
+            day_sheet.update_cell(i+2, 8, "")  # Telegram ID
+    await call.message.answer(f"Блок {block_num} розблоковано.")
+    await call.answer()
+
+# --- Додати завдання у шаблон ---
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
+class AddTemplateState(StatesGroup):
+    wait_blocks = State()
+    wait_block_num = State()
+    wait_task = State()
+    wait_reminder = State()
+    wait_time = State()
+
+@dp.callback_query(lambda c: c.data == "admin_add_template")
+async def admin_add_template_start(call: types.CallbackQuery, state: FSMContext):
+    await call.message.answer("Вкажіть кількість блоків (6/7/8/9):")
+    await state.set_state(AddTemplateState.wait_blocks)
+    await call.answer()
+
+@dp.message(AddTemplateState.wait_blocks)
+async def admin_add_template_blocknum(message: types.Message, state: FSMContext):
+    blocks = message.text.strip()
+    if blocks not in ["6", "7", "8", "9"]:
+        await message.answer("Введіть 6, 7, 8 або 9.")
+        return
+    await state.update_data(blocks=blocks)
+    await message.answer("Вкажіть номер блоку (1, 2, ...):")
+    await state.set_state(AddTemplateState.wait_block_num)
+
+@dp.message(AddTemplateState.wait_block_num)
+async def admin_add_template_task(message: types.Message, state: FSMContext):
+    block_num = message.text.strip()
+    await state.update_data(block_num=block_num)
+    await message.answer("Введіть назву завдання:")
+    await state.set_state(AddTemplateState.wait_task)
+
+@dp.message(AddTemplateState.wait_task)
+async def admin_add_template_reminder(message: types.Message, state: FSMContext):
+    task = message.text.strip()
+    await state.update_data(task=task)
+    await message.answer("Введіть текст нагадування:")
+    await state.set_state(AddTemplateState.wait_reminder)
+
+@dp.message(AddTemplateState.wait_reminder)
+async def admin_add_template_time(message: types.Message, state: FSMContext):
+    reminder = message.text.strip()
+    await state.update_data(reminder=reminder)
+    await message.answer("Введіть час нагадування у форматі HH:MM (наприклад, 10:00):")
+    await state.set_state(AddTemplateState.wait_time)
+
+@dp.message(AddTemplateState.wait_time)
+async def admin_add_template_finish(message: types.Message, state: FSMContext):
+    time_str = message.text.strip()
+    data = await state.get_data()
+    # Додаємо рядок у шаблон!
+    template_sheet.append_row([
+        data["blocks"], data["block_num"], data["task"], data["reminder"], time_str, ""
+    ])
+    await message.answer("✅ Завдання додано у шаблон!")
+    await state.clear()
+
+# --- Редагування завдання (простий приклад: тільки нагадування/час) ---
+class EditTaskState(StatesGroup):
+    wait_block = State()
+    wait_reminder = State()
+    wait_time = State()
+    wait_row_idx = State()
+
+@dp.callback_query(lambda c: c.data == "admin_edit_task")
+async def admin_edit_task_start(call: types.CallbackQuery, state: FSMContext):
+    blocks = get_blocks_for_today()
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=f"Блок {b}", callback_data=f"editblock_{b}")] for b in blocks]
+    )
+    await call.message.answer("Оберіть блок для редагування:", reply_markup=kb)
+    await call.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("editblock_"))
+async def edit_task_choose_reminder(call: types.CallbackQuery, state: FSMContext):
+    block_num = call.data.replace("editblock_", "")
+    today = get_today()
+    records = day_sheet.get_all_records()
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"{row['Нагадування']} ({row['Час']})", callback_data=f"editrow_{i+2}")]
+            for i, row in enumerate(records)
+            if str(row["Дата"]) == today and str(row["Блок"]) == block_num
+        ]
+    )
+    await call.message.answer("Оберіть нагадування для редагування:", reply_markup=kb)
+    await call.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("editrow_"))
+async def edit_task_input_reminder(call: types.CallbackQuery, state: FSMContext):
+    row_idx = int(call.data.replace("editrow_", ""))
+    await state.update_data(row_idx=row_idx)
+    await call.message.answer("Введіть новий текст нагадування:")
+    await state.set_state(EditTaskState.wait_reminder)
+    await call.answer()
+
+@dp.message(EditTaskState.wait_reminder)
+async def edit_task_input_time(message: types.Message, state: FSMContext):
+    reminder = message.text.strip()
+    await state.update_data(reminder=reminder)
+    await message.answer("Введіть новий час (HH:MM):")
+    await state.set_state(EditTaskState.wait_time)
+
+@dp.message(EditTaskState.wait_time)
+async def edit_task_save(message: types.Message, state: FSMContext):
+    time_str = message.text.strip()
+    data = await state.get_data()
+    day_sheet.update_cell(data["row_idx"], 5, data["reminder"])  # "Нагадування"
+    day_sheet.update_cell(data["row_idx"], 6, time_str)  # "Час"
+    await message.answer("✅ Нагадування та час оновлено!")
+    await state.clear()
+
+# --- Інші налаштування ---
+@dp.callback_query(lambda c: c.data == "admin_other_settings")
+async def admin_other_settings(call: types.CallbackQuery):
+    await call.message.answer("🔧 У майбутньому тут будуть додаткові налаштування.")
+    await call.answer()
+
 # --- Reply меню користувача ---
 user_menu = types.ReplyKeyboardMarkup(
     keyboard=[

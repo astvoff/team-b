@@ -288,12 +288,15 @@ def get_tasks_for_block(block_num):
     ]
 
 # === Прив'язати користувача до блоку ===
-def assign_user_to_block(block_num, user_id):
+async def assign_user_to_block(block_num, user_id):
     today = get_today()
     records = day_sheet.get_all_records()
+    user = await bot.get_chat(user_id)
+    name = user.username or user.full_name or str(user_id)
     for i, row in enumerate(records):
         if str(row["Дата"]) == today and str(row["Блок"]) == str(block_num) and not row["Telegram ID"]:
-            day_sheet.update_cell(i+2, 8, str(user_id))  # 8 — Telegram ID
+            day_sheet.update_cell(i+2, 8, str(user_id))  # Telegram ID
+            day_sheet.update_cell(i+2, 9, name)          # Імʼя (новий стовпець)
     user_sessions[user_id] = block_num
 
 # === Відмітити нагадування як виконане ===

@@ -37,7 +37,7 @@ scheduler = AsyncIOScheduler()
 user_sessions = {}  # user_id: block_num
 
 # --- Reply меню користувача ---
-main_menu = types.ReplyKeyboardMarkup(
+user_menu = types.ReplyKeyboardMarkup(
     keyboard=[
         [types.KeyboardButton(text="Розпочати день")],
         [types.KeyboardButton(text="Створити нагадування")],

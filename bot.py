@@ -23,6 +23,61 @@ ADMIN_IDS = [438830182]   # <-- твій Telegram ID
 
 logging.basicConfig(level=logging.INFO)
 
+GENERAL_REMINDER_SHEET = 'Загальні нагадування'
+general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDER_SHEET)
+
+# Отримуємо всіх користувачів (наприклад, тих, хто вибирав блок)
+def get_all_users():
+    records = day_sheet.get_all_records()
+    user_ids = set()
+    for row in records:
+        uid = row.get("Telegram ID")
+        if uid:
+            user_ids.add(int(uid))
+    return list(user_ids)
+
+def schedule_general_reminders():
+    rows = general_reminders_sheet.get_all_records()
+    days_map = {
+        "понеділок": 0, "вівторок": 1, "середа": 2,
+        "четвер": 3, "пʼятниця": 4, "субота": 5, "неділя": 6,
+        "пятниця": 4, "п’ятниця": 4 # якщо хтось без апострофа
+    }
+    for row in rows:
+        day = row.get('День', '').strip().lower()
+        time_str = row.get('Час', '').strip()
+        text = row.get('Текст', '').strip()
+        if not day or not time_str or not text:
+            continue
+        weekday_num = days_map.get(day)
+        if weekday_num is None:
+            continue
+        hour, minute = map(int, time_str.split(":"))
+        # Плануємо кожного тижня
+        scheduler.add_job(
+            send_general_reminder,
+            'cron',
+            day_of_week=weekday_num,
+            hour=hour,
+            minute=minute,
+            args=[text],
+            id=f"general-{day}-{hour}-{minute}",
+            replace_existing=True
+        )
+
+async def send_general_reminder(text):
+    for user_id in get_all_users():
+        try:
+            await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
+        except Exception as e:
+            logging.warning(f"Cannot send to user {user_id}: {e}")
+
+# викликаємо після scheduler.start() в main():
+async def main():
+    scheduler.start()
+    schedule_general_reminders()
+    await dp.start_polling(bot)
+
 # --- Google Sheets ---
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
@@ -32,20 +87,7 @@ DAY_SHEET = 'Завдання на день'
 template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
 day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
 
-GROUP_REMINDERS_SHEET = 'Групові нагадування'
-group_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GROUP_REMINDERS_SHEET)
 
-import calendar
-
-UA_DAYS = {
-    0: "Понеділок",
-    1: "Вівторок",
-    2: "Середа",
-    3: "Четвер",
-    4: "П’ятниця",
-    5: "Субота",
-    6: "Неділя"
-}
 # --- Telegram бот ---
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -239,49 +281,6 @@ def schedule_reminders_for_user(user_id, tasks):
                 replace_existing=True
             )
 
-# --- Отримати всіх юзерів (наприклад, із таблиці з завданнями) ---
-def get_all_user_ids():
-    records = day_sheet.get_all_records()
-    user_ids = set()
-    for row in records:
-        uid = str(row.get("Telegram ID", "")).strip()
-        if uid.isdigit():
-            user_ids.add(int(uid))
-    return list(user_ids)
-
-# --- Функція для планування групових нагадувань ---
-def schedule_group_reminders():
-    scheduler.remove_all_jobs(jobstore='group_reminders')
-    today_idx = datetime.now(UA_TZ).weekday()
-    today_name = UA_DAYS[today_idx]
-    reminders = group_reminders_sheet.get_all_records()
-    now_date = now_ua().strftime('%Y-%m-%d')
-    for row in reminders:
-        if row.get("День", "").strip() == today_name:
-            time_str = row.get("Час", "").strip()
-            text = row.get("Текст", "").strip()
-            if time_str and text:
-                remind_time = datetime.strptime(f"{now_date} {time_str}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
-                if remind_time > now_ua():
-                    scheduler.add_job(
-                        send_group_reminder,
-                        'date',
-                        run_date=remind_time,
-                        args=[text],
-                        id=f"group-{today_name}-{time_str}-{text[:5]}",
-                        replace_existing=True,
-                        jobstore='group_reminders'
-                    )
-
-# --- Функція відправки групового нагадування ---
-async def send_group_reminder(text):
-    user_ids = get_all_user_ids()
-    for user_id in user_ids:
-        try:
-            await bot.send_message(user_id, f"📢 <b>Групове нагадування:</b>\n{text}", parse_mode="HTML")
-        except Exception as e:
-            logging.warning(f"Не вдалося надіслати {user_id}: {e}")
-
 # --- Планувати щодня після запуску ---
 async def daily_group_reminders():
     while True:
@@ -390,10 +389,6 @@ async def my_tasks(message: types.Message):
         text += f"— {time}: {task} | {reminder} {status}\n"
     await message.answer(text, parse_mode="HTML", reply_markup=user_menu)
 
-@dp.message(F.text == "Назад")
-async def go_back(message: types.Message):
-    await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)
-
 @dp.message(F.text == "Завершити день")
 async def finish_day(message: types.Message):
     user_id = message.from_user.id
@@ -461,6 +456,10 @@ async def select_block(message: types.Message):
     )
     schedule_reminders_for_user(user_id, tasks)
 
+@dp.message(F.text == "Назад")
+async def go_back(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)
 
 # --- Запуск ---
 async def main():

@@ -39,11 +39,11 @@ user_sessions = {}  # user_id: block_num
 # --- Reply меню користувача ---
 user_menu = types.ReplyKeyboardMarkup(
     keyboard=[
+        [types.KeyboardButton(text="Розпочати день")]
         [types.KeyboardButton(text="Список моїх завдань")],
         [types.KeyboardButton(text="Створити нагадування")],
+        [types.KeyboardButton(text="Завершити день")],
         [types.KeyboardButton(text="Назад")],
-        [types.KeyboardButton(text="Розпочати день")]
-
     ],
     resize_keyboard=True
 )

@@ -42,6 +42,8 @@ user_menu = types.ReplyKeyboardMarkup(
         [types.KeyboardButton(text="Список моїх завдань")],
         [types.KeyboardButton(text="Створити нагадування")],
         [types.KeyboardButton(text="Назад")],
+        [types.KeyboardButton(text="Розпочати день")]
+
     ],
     resize_keyboard=True
 )
@@ -115,7 +117,7 @@ async def assign_user_to_block(block_num, user_id):
     user_sessions[user_id] = block_num
 
 def mark_task_done(row):
-    day_sheet.update_cell(row, 10, "TRUE")  # 10 — Виконано
+    day_sheet.update_cell(row, 11, "TRUE")  # 11 — Виконано
 
 # ==== Inline-нагадування ====
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -299,6 +301,22 @@ async def create_custom_reminder(message: types.Message):
 @dp.message(F.text == "Назад")
 async def go_back(message: types.Message):
     await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)
+
+@dp.message(F.text == "Завершити день")
+async def finish_day(message: types.Message):
+    user_id = message.from_user.id
+    today = get_today()
+    records = day_sheet.get_all_records()
+    tasks_done = 0
+    for i, row in enumerate(records):
+        if str(row["Дата"]) == today and str(row["Telegram ID"]) == str(user_id):
+            day_sheet.update_cell(i+2, 9, "TRUE")  # Відмічаємо як виконано (або додаємо колонку "Завершено")
+            tasks_done += 1
+    await message.answer(
+        f"День завершено! Завдань виконано: {tasks_done}\n"
+        "Гарного відпочинку!", 
+        reply_markup=main_menu
+    )
 
 # --- Тут можуть бути інші адмін-меню/фічі ---
 

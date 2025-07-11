@@ -32,6 +32,20 @@ DAY_SHEET = 'Завдання на день'
 template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
 day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
 
+GROUP_REMINDERS_SHEET = 'Групові нагадування'
+group_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GROUP_REMINDERS_SHEET)
+
+import calendar
+
+UA_DAYS = {
+    0: "Понеділок",
+    1: "Вівторок",
+    2: "Середа",
+    3: "Четвер",
+    4: "П’ятниця",
+    5: "Субота",
+    6: "Неділя"
+}
 # --- Telegram бот ---
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -224,6 +238,61 @@ def schedule_reminders_for_user(user_id, tasks):
                 id=f"admin-{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
                 replace_existing=True
             )
+
+# --- Отримати всіх юзерів (наприклад, із таблиці з завданнями) ---
+def get_all_user_ids():
+    records = day_sheet.get_all_records()
+    user_ids = set()
+    for row in records:
+        uid = str(row.get("Telegram ID", "")).strip()
+        if uid.isdigit():
+            user_ids.add(int(uid))
+    return list(user_ids)
+
+# --- Функція для планування групових нагадувань ---
+def schedule_group_reminders():
+    scheduler.remove_all_jobs(jobstore='group_reminders')
+    today_idx = datetime.now(UA_TZ).weekday()
+    today_name = UA_DAYS[today_idx]
+    reminders = group_reminders_sheet.get_all_records()
+    now_date = now_ua().strftime('%Y-%m-%d')
+    for row in reminders:
+        if row.get("День", "").strip() == today_name:
+            time_str = row.get("Час", "").strip()
+            text = row.get("Текст", "").strip()
+            if time_str and text:
+                remind_time = datetime.strptime(f"{now_date} {time_str}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
+                if remind_time > now_ua():
+                    scheduler.add_job(
+                        send_group_reminder,
+                        'date',
+                        run_date=remind_time,
+                        args=[text],
+                        id=f"group-{today_name}-{time_str}-{text[:5]}",
+                        replace_existing=True,
+                        jobstore='group_reminders'
+                    )
+
+# --- Функція відправки групового нагадування ---
+async def send_group_reminder(text):
+    user_ids = get_all_user_ids()
+    for user_id in user_ids:
+        try:
+            await bot.send_message(user_id, f"📢 <b>Групове нагадування:</b>\n{text}", parse_mode="HTML")
+        except Exception as e:
+            logging.warning(f"Не вдалося надіслати {user_id}: {e}")
+
+# --- Планувати щодня після запуску ---
+async def daily_group_reminders():
+    while True:
+        schedule_group_reminders()
+        await asyncio.sleep(60 * 60 * 6)  # Оновлювати кожні 6 годин (можна змінити)
+
+# --- Запуск воркера в main() ---
+async def main():
+    scheduler.start()
+    asyncio.create_task(daily_group_reminders())  # <--- Додаємо!
+    await dp.start_polling(bot)
 
 # === FSM для особистого нагадування ===
 class PersonalReminderState(StatesGroup):

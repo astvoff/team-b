@@ -50,7 +50,6 @@ async def send_reminder(user_id, task, reminder, row):
         f"Завдання: {task}\n"
         f"Нагадування: {reminder}\n\n"
         f"Статус виконання: ⏳ Нагадування надійшло\n\n"
-        f"Після виконання натисни «✅ Виконано».",
         reply_markup=kb
     )
     user_sessions[user_id] = row

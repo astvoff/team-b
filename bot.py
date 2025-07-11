@@ -38,7 +38,7 @@ user_sessions = {}  # user_id: block_num
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# ===== Інлайн-кнопка для нагадувань =====
+# 1. Надсилання нагадування (з початковим статусом)
 async def send_reminder(user_id, task, reminder, row):
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -47,17 +47,31 @@ async def send_reminder(user_id, task, reminder, row):
     )
     await bot.send_message(
         user_id,
-        f"Завдання: {task}\nНагадування: {reminder}\n\nПісля виконання натисни «✅ Виконано».",
+        f"Завдання: {task}\n"
+        f"Нагадування: {reminder}\n\n"
+        f"Статус виконання: ⏳ Нагадування надійшло\n\n"
+        f"Після виконання натисни «✅ Виконано».",
         reply_markup=kb
     )
     user_sessions[user_id] = row
 
+# 2. Callback-обробник для кнопки "Виконано"
 @dp.callback_query(F.data.startswith('done_'))
 async def done_callback(call: types.CallbackQuery):
     row = int(call.data.split('_')[1])
     mark_task_done(row)
+    # Оновлюємо повідомлення: статус -> "Успішно виконано", прибираємо кнопку
+    old_text = call.message.text or call.message.caption or ""
+    # Замінюємо рядок статусу
+    new_text = old_text.replace(
+        "Статус виконання: ⏳ Нагадування надійшло",
+        "Статус виконання: ✅ Успішно виконано"
+    )
+    # Якщо не знайшло - додаємо в кінець
+    if new_text == old_text:
+        new_text += "\n\nСтатус виконання: ✅ Успішно виконано"
+    await call.message.edit_text(new_text, reply_markup=None)
     await call.answer("Відмічено як виконане ✅")
-    await call.message.edit_reply_markup()
 
 # --- Адмін-меню / команда ---
 @dp.message(lambda msg: msg.text and (msg.text.strip().lower() == '/admin' or msg.text == 'Адмін-меню'))

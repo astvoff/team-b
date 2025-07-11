@@ -53,6 +53,7 @@ async def send_reminder(user_id, task, reminder, row):
         f"Завдання: {task}\nНагадування: {reminder}\n\nПісля виконання натисни «✅ Виконано».",
         reply_markup=kb
     )
+    
     @dp.callback_query(F.data.startswith('done_'))
 async def done_callback(call: types.CallbackQuery):
     row = int(call.data.split('_')[1])
@@ -476,6 +477,13 @@ async def mark_done(message: types.Message):
     mark_task_done(row)
     await message.answer("Відмічено як виконане ✅", reply_markup=types.ReplyKeyboardRemove())
     user_sessions[user_id] = None
+
+@dp.callback_query(F.data.startswith('done_'))
+async def done_callback(call: types.CallbackQuery):
+    row = int(call.data.split('_')[1])        # Витягуємо номер рядка із callback_data
+    mark_task_done(row)                       # Відмічаємо завдання як виконане
+    await call.answer("Відмічено як виконане ✅")   # Короткий popup
+    await call.message.edit_reply_markup()          # Прибираємо кнопку після натискання
 
 async def main():
     scheduler.start()

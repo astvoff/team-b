@@ -4,6 +4,7 @@ import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import default_state
 from aiogram.fsm.state import State, StatesGroup
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import gspread
@@ -359,11 +360,23 @@ async def choose_blocks_count(message: types.Message):
     kb = types.ReplyKeyboardMarkup(
         keyboard=[
             [types.KeyboardButton(text='6'), types.KeyboardButton(text='7')],
-            [types.KeyboardButton(text='8'), types.KeyboardButton(text='9')]
+            [types.KeyboardButton(text='8'), types.KeyboardButton(text='9')],
+            [types.KeyboardButton(text='Назад')],
         ],
         resize_keyboard=True
     )
     await message.answer("Оберіть кількість блоків на сьогодні:", reply_markup=kb)
+
+@dp.message(F.text.in_(['6', '7', '8', '9']))
+async def on_blocks_count_chosen(message: types.Message):
+    blocks_count = message.text.strip()
+    copy_template_blocks_to_today(blocks_count)
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=[[types.KeyboardButton(text=f"{b} блок")] for b in get_blocks_for_today()] +
+                 [[types.KeyboardButton(text="Назад")]],
+        resize_keyboard=True
+    )
+    await message.answer(f"Оберіть свій блок:", reply_markup=kb)
 
 @dp.message(F.text.in_(['6', '7', '8', '9']))
 async def on_blocks_count_chosen(message: types.Message):
@@ -406,6 +419,12 @@ async def select_block(message: types.Message):
 async def go_back(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)
+
+@dp.message(F.text == "Назад", state="*")  # "*" — обробка на будь-якому стані FSM
+async def universal_back(message: types.Message, state: FSMContext):
+    await state.clear()  # Вихід із FSM
+    await message.answer("⬅️ Повернулись до головного меню.", reply_markup=user_menu)
+
 
 # --- Запуск ---
 async def main():

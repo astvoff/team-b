@@ -4,7 +4,8 @@ import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import default_state
+from aiogram.fsm.state import State, StatesGroup, default_state
+from aiogram.filters import StateFilter
 from aiogram.fsm.state import State, StatesGroup
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import gspread
@@ -415,16 +416,10 @@ async def select_block(message: types.Message):
     )
     schedule_reminders_for_user(user_id, tasks)
 
-@dp.message(F.text == "Назад")
-async def go_back(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)
-
-@dp.message(F.text == "Назад", state="*")  # "*" — обробка на будь-якому стані FSM
+@dp.message(StateFilter('*'), F.text == "Назад")
 async def universal_back(message: types.Message, state: FSMContext):
-    await state.clear()  # Вихід із FSM
+    await state.clear()
     await message.answer("⬅️ Повернулись до головного меню.", reply_markup=user_menu)
-
 
 # --- Запуск ---
 async def main():

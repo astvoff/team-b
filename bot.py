@@ -40,7 +40,7 @@ general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_
 # --- Telegram бот ---
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-scheduler = AsyncIOScheduler()
+scheduler = AsyncIOScheduler(timezone=UA_TZ)
 user_sessions = {}
 
 # --- Reply клавіатури ---

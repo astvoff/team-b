@@ -476,17 +476,6 @@ async def done_callback(call: types.CallbackQuery):
 
     schedule_reminders_for_user(user_id, tasks)
 
-@dp.message(F.text == '✅ Виконано')
-async def mark_done(message: types.Message):
-    user_id = message.from_user.id
-    row = user_sessions.get(user_id)
-    if not row:
-        await message.answer("Помилка: завдання не знайдено.")
-        return
-    mark_task_done(row)
-    await message.answer("Відмічено як виконане ✅", reply_markup=types.ReplyKeyboardRemove())
-    user_sessions[user_id] = None
-
 
 async def main():
     scheduler.start()

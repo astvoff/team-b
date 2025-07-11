@@ -40,7 +40,26 @@ user_sessions = {}  # user_id: block_num
 # Початок файлу:
 ADMIN_IDS = [438830182]  # <-- Вкажи свій Telegram ID, можна список для кількох адміністраторів
 
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+async def send_reminder(user_id, task, reminder, row):
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text='✅ Виконано', callback_data=f'done_{row}')]
+        ]
+    )
+    await bot.send_message(
+        user_id,
+        f"Завдання: {task}\nНагадування: {reminder}\n\nПісля виконання натисни «✅ Виконано».",
+        reply_markup=kb
+    )
+    @dp.callback_query(F.data.startswith('done_'))
+async def done_callback(call: types.CallbackQuery):
+    row = int(call.data.split('_')[1])
+    mark_task_done(row)
+    await call.answer("Відмічено як виконане ✅")
+    await call.message.edit_reply_markup()  # Забирає кнопку після натискання
+    # Можна ще додати повідомлення адміну або змінити текст
 
 # --- Адмін-меню / команда ---
 @dp.message(lambda msg: msg.text and (msg.text.strip().lower() == '/admin' or msg.text == 'Адмін-меню'))

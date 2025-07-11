@@ -23,60 +23,6 @@ ADMIN_IDS = [438830182]   # <-- твій Telegram ID
 
 logging.basicConfig(level=logging.INFO)
 
-GENERAL_REMINDER_SHEET = 'Загальні нагадування'
-general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDER_SHEET)
-
-# Отримуємо всіх користувачів (наприклад, тих, хто вибирав блок)
-def get_all_users():
-    records = day_sheet.get_all_records()
-    user_ids = set()
-    for row in records:
-        uid = row.get("Telegram ID")
-        if uid:
-            user_ids.add(int(uid))
-    return list(user_ids)
-
-def schedule_general_reminders():
-    rows = general_reminders_sheet.get_all_records()
-    days_map = {
-        "понеділок": 0, "вівторок": 1, "середа": 2,
-        "четвер": 3, "пʼятниця": 4, "субота": 5, "неділя": 6,
-        "пятниця": 4, "п’ятниця": 4 # якщо хтось без апострофа
-    }
-    for row in rows:
-        day = row.get('День', '').strip().lower()
-        time_str = row.get('Час', '').strip()
-        text = row.get('Текст', '').strip()
-        if not day or not time_str or not text:
-            continue
-        weekday_num = days_map.get(day)
-        if weekday_num is None:
-            continue
-        hour, minute = map(int, time_str.split(":"))
-        # Плануємо кожного тижня
-        scheduler.add_job(
-            send_general_reminder,
-            'cron',
-            day_of_week=weekday_num,
-            hour=hour,
-            minute=minute,
-            args=[text],
-            id=f"general-{day}-{hour}-{minute}",
-            replace_existing=True
-        )
-
-async def send_general_reminder(text):
-    for user_id in get_all_users():
-        try:
-            await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
-        except Exception as e:
-            logging.warning(f"Cannot send to user {user_id}: {e}")
-
-# викликаємо після scheduler.start() в main():
-async def main():
-    scheduler.start()
-    schedule_general_reminders()
-    await dp.start_polling(bot)
 
 # --- Google Sheets ---
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]

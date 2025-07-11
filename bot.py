@@ -304,10 +304,6 @@ async def my_tasks(message: types.Message):
         text += f"— {time}: {task} | {reminder} {status}\n"
     await message.answer(text, parse_mode="HTML", reply_markup=user_menu)
 
-@dp.message(F.text == "Створити нагадування")
-async def create_custom_reminder(message: types.Message):
-    await message.answer("🛠 Функція створення власного нагадування незабаром буде доступна!", reply_markup=user_menu)
-
 @dp.message(F.text == "Назад")
 async def go_back(message: types.Message):
     await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)

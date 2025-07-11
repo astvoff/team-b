@@ -15,6 +15,11 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 SHEET_KEY = os.getenv('SHEET_KEY')
 UA_TZ = timezone(timedelta(hours=3))  # Київ
 
+REMINDER_REPEAT_MINUTES = 20   # через 20 хвилин повторити нагадування
+ADMIN_NOTIFY_MINUTES = 30      # через 30 хвилин адміну
+ADMIN_IDS = [438830182]
+
+
 logging.basicConfig(level=logging.INFO)
 
 # Авторизація Google Sheets
@@ -295,7 +300,7 @@ def assign_user_to_block(block_num, user_id):
 def mark_task_done(row):
     day_sheet.update_cell(row, 9, "TRUE")  # 9 — Виконано
 
-# === Нагадування користувачу ===
+# ==== Нагадування користувачу ====
 async def send_reminder(user_id, task, reminder, row):
     kb = types.ReplyKeyboardMarkup(
         keyboard=[[types.KeyboardButton(text='✅ Виконано')]],
@@ -308,14 +313,50 @@ async def send_reminder(user_id, task, reminder, row):
     )
     user_sessions[user_id] = row
 
+# ==== Повторне нагадування через 20 хвилин ====
+async def repeat_reminder_if_needed(user_id, row, task, reminder, block):
+    value = day_sheet.cell(row, 9).value  # "Виконано"
+    if value != "TRUE":
+        await bot.send_message(
+            user_id,
+            f"⏰ Завдання досі не виконано:\n\n"
+            f"Блок {block}\n"
+            f"Завдання: {task}\n"
+            f"Нагадування: {reminder}\n\n"
+            f"Не забудь натиснути «✅ Виконано»!"
+        )
+
+# ==== Повідомлення адміну через 30 хвилин ====
+async def notify_admin_if_needed(user_id, row, task, reminder, block):
+    value = day_sheet.cell(row, 9).value  # "Виконано"
+    if value != "TRUE":
+        try:
+            user = await bot.get_chat(user_id)
+            username = user.username or user.full_name
+        except Exception:
+            username = str(user_id)
+        for admin_id in ADMIN_IDS:
+            await bot.send_message(
+                admin_id,
+                f"❗️ <b>Завдання НЕ виконано!</b>\n"
+                f"Користувач: @{username} (ID: {user_id})\n"
+                f"Блок: {block}\n"
+                f"Завдання: {task}\n"
+                f"Нагадування: {reminder}",
+                parse_mode="HTML"
+            )
+
+# ==== Планування нагадувань ====
 def schedule_reminders_for_user(user_id, tasks):
     for t in tasks:
         if not t["time"]:
-            continue  # пропустити без часу
+            continue
         remind_time = datetime.strptime(f"{get_today()} {t['time']}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
         now = now_ua()
         if remind_time <= now:
-            continue  # Час минув
+            continue
+        block = t.get("block") or t.get("Блок") or "?"
+        # Основне нагадування
         scheduler.add_job(
             send_reminder,
             'date',
@@ -324,6 +365,25 @@ def schedule_reminders_for_user(user_id, tasks):
             id=f"{user_id}-{t['row']}-{int(remind_time.timestamp())}",
             replace_existing=True
         )
+        # Повторне нагадування через 20 хв
+        scheduler.add_job(
+            repeat_reminder_if_needed,
+            'date',
+            run_date=remind_time + timedelta(minutes=REMINDER_REPEAT_MINUTES),
+            args=[user_id, t["row"], t["task"], t["reminder"], block],
+            id=f"repeat-{user_id}-{t['row']}-{int(remind_time.timestamp())}",
+            replace_existing=True
+        )
+        # Адміну через 30 хв
+        scheduler.add_job(
+            notify_admin_if_needed,
+            'date',
+            run_date=remind_time + timedelta(minutes=ADMIN_NOTIFY_MINUTES),
+            args=[user_id, t["row"], t["task"], t["reminder"], block],
+            id=f"admin-{user_id}-{t['row']}-{int(remind_time.timestamp())}",
+            replace_existing=True
+        )
+
 
 # === aiogram обробники ===
 

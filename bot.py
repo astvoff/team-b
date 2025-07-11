@@ -363,7 +363,7 @@ async def knowledge_base_placeholder(message: types.Message):
 
 
     # Плануємо нагадування
-    remind_dt = datetime.strptime(f"{today} {reminder_time}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
+    remind_dt = datetime.strptime(f"{get_today} {reminder_time}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
     scheduler.add_job(
         send_personal_reminder,
         'date',

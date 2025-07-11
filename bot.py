@@ -40,6 +40,7 @@ user_sessions = {}  # user_id: block_num
 # Початок файлу:
 ADMIN_IDS = [438830182]  # <-- Вкажи свій Telegram ID, можна список для кількох адміністраторів
 
+# --- Inline кнопка "Виконано" ---
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 async def send_reminder(user_id, task, reminder, row):
@@ -53,7 +54,14 @@ async def send_reminder(user_id, task, reminder, row):
         f"Завдання: {task}\nНагадування: {reminder}\n\nПісля виконання натисни «✅ Виконано».",
         reply_markup=kb
     )
-    
+    user_sessions[user_id] = row
+
+@dp.callback_query(F.data.startswith('done_'))
+async def done_callback(call: types.CallbackQuery):
+    row = int(call.data.split('_')[1])
+    mark_task_done(row)
+    await call.answer("Відмічено як виконане ✅")
+    await call.message.edit_reply_markup()    
     @dp.callback_query(F.data.startswith('done_'))
 async def done_callback(call: types.CallbackQuery):
     row = int(call.data.split('_')[1])
@@ -454,14 +462,6 @@ async def select_block(message: types.Message):
             else:
                 await message.answer("Цей блок вже зайнятий іншим працівником.")
                 return
-
-    
-@dp.callback_query(F.data.startswith('done_'))
-async def done_callback(call: types.CallbackQuery):
-    row = int(call.data.split('_')[1])        # Витягуємо номер рядка із callback_data
-    mark_task_done(row)                       # Відмічаємо завдання як виконане
-    await call.answer("Відмічено як виконане ✅")   # Короткий popup
-    await call.message.edit_reply_markup()          # Прибираємо кнопку після натискання
     
     # Прив'язуємо
     assign_user_to_block(block_num, user_id)

@@ -251,6 +251,11 @@ class PersonalReminderState(StatesGroup):
 async def create_reminder_start(message: types.Message, state: FSMContext):
     await message.answer("Вкажіть вид завдання (наприклад, 'Особисте', 'Для магазину' тощо):")
     await state.set_state(PersonalReminderState.wait_type)
+    
+@dp.message(StateFilter('*'), F.text == "Назад")
+async def universal_back(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)
 
 @dp.message(PersonalReminderState.wait_type)
 async def create_reminder_type(message: types.Message, state: FSMContext):
@@ -258,11 +263,21 @@ async def create_reminder_type(message: types.Message, state: FSMContext):
     await message.answer("Введіть текст нагадування:")
     await state.set_state(PersonalReminderState.wait_text)
 
+@dp.message(StateFilter('*'), F.text == "Назад")
+async def universal_back(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)
+
 @dp.message(PersonalReminderState.wait_text)
 async def create_reminder_text(message: types.Message, state: FSMContext):
     await state.update_data(reminder_text=message.text.strip())
     await message.answer("Вкажіть час нагадування у форматі HH:MM (наприклад, 14:30):")
     await state.set_state(PersonalReminderState.wait_time)
+
+@dp.message(StateFilter('*'), F.text == "Назад")
+async def universal_back(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)
 
 @dp.message(PersonalReminderState.wait_time)
 async def create_reminder_time(message: types.Message, state: FSMContext):

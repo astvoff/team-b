@@ -117,7 +117,7 @@ async def assign_user_to_block(block_num, user_id):
     user_sessions[user_id] = block_num
 
 def mark_task_done(row):
-    day_sheet.update_cell(row, 11, "TRUE")  # 11 — Виконано
+    day_sheet.update_cell(row, 10, "TRUE")  # 10 — Виконано
 
 # ==== Inline-нагадування ====
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -276,22 +276,26 @@ async def select_block(message: types.Message):
     schedule_reminders_for_user(user_id, tasks)
 
 # --- Навігаційне меню користувача ---
-@dp.message(F.text == "Список моїх завдань")
-async def show_my_tasks(message: types.Message):
+@dp.message(lambda msg: msg.text == "Список моїх завдань")
+async def my_tasks(message: types.Message):
     user_id = message.from_user.id
     today = get_today()
     records = day_sheet.get_all_records()
     my_tasks = [
         row for row in records
-        if str(row.get("Telegram ID")) == str(user_id) and str(row["Дата"]) == today
+        if str(row.get("Дата")) == today and str(row.get("Telegram ID")) == str(user_id)
     ]
     if not my_tasks:
         await message.answer("У вас немає завдань на сьогодні.", reply_markup=user_menu)
         return
+
     text = "<b>Ваші завдання на сьогодні:</b>\n"
     for row in my_tasks:
         status = "✅" if row.get("Виконано") == "TRUE" else "❌"
-        text += f'— {row["Час"]}: {row["Завдання"]} | {row["Нагадування"]} {status}\n'
+        time = row.get("Час") or ""
+        task = row.get("Завдання") or ""
+        reminder = row.get("Нагадування") or ""
+        text += f"— {time}: {task} | {reminder} {status}\n"
     await message.answer(text, parse_mode="HTML", reply_markup=user_menu)
 
 @dp.message(F.text == "Створити нагадування")
@@ -302,21 +306,19 @@ async def create_custom_reminder(message: types.Message):
 async def go_back(message: types.Message):
     await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)
 
-@dp.message(F.text == "Завершити день")
+@dp.message(lambda msg: msg.text == "Завершити день")
 async def finish_day(message: types.Message):
     user_id = message.from_user.id
     today = get_today()
     records = day_sheet.get_all_records()
-    tasks_done = 0
-    for i, row in enumerate(records):
-        if str(row["Дата"]) == today and str(row["Telegram ID"]) == str(user_id):
-            day_sheet.update_cell(i+2, 9, "TRUE")  # Відмічаємо як виконано (або додаємо колонку "Завершено")
-            tasks_done += 1
-    await message.answer(
-        f"День завершено! Завдань виконано: {tasks_done}\n"
-        "Гарного відпочинку!", 
-        reply_markup=main_menu
-    )
+    updated = 0
+    for idx, row in enumerate(records):
+        if str(row.get("Дата")) == today and str(row.get("Telegram ID")) == str(user_id):
+            if not row.get("Виконано") or row.get("Виконано") not in ["TRUE", "✅"]:
+                # Встановлюємо статус як FALSE для невиконаних
+                day_sheet.update_cell(idx + 2, 10, "FALSE")
+                updated += 1
+    await message.answer("Робочий день завершено! Виконання або невиконання завдання зафіксовано.", reply_markup=user_menu)
 
 # --- Тут можуть бути інші адмін-меню/фічі ---
 

@@ -37,7 +37,7 @@ KNOWLEDGE_SHEET = 'База знань'
 template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
 day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
 general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
-knowledge_sheet = gs.open_by_key(SHEET_KEY).worksheet(KNOWLEDGE_SHEET)
+knowledge_base_sheet = gs.open_by_key(SHEET_KEY).worksheet(KNOWLEDGE_BASE_SHEET)
 
 
 # --- Telegram бот ---

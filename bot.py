@@ -33,7 +33,7 @@ gs = gspread.authorize(creds)
 TEMPLATE_SHEET = 'Шаблони блоків'
 DAY_SHEET = 'Завдання на день'
 GENERAL_REMINDERS_SHEET = 'Загальні нагадування'
-KNOWLEDGE_BASE_SHEET = 'База знань'
+KNOWLEDGE_BASE_SHEET = 'Інформаційна база'
 template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
 day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
 knowledge_base_sheet = gs.open_by_key(SHEET_KEY).worksheet(KNOWLEDGE_BASE_SHEET)
@@ -52,7 +52,7 @@ user_menu = types.ReplyKeyboardMarkup(
     keyboard=[
         [types.KeyboardButton(text="Розпочати день")],
         [types.KeyboardButton(text="Список моїх завдань"), types.KeyboardButton(text="Створити нагадування")],
-        [types.KeyboardButton(text="База знань"), types.KeyboardButton(text="Завершити день")],
+        [types.KeyboardButton(text="Інформаційна база"), types.KeyboardButton(text="Завершити день")],
         [types.KeyboardButton(text="Назад")]
     ],
     resize_keyboard=True
@@ -417,12 +417,12 @@ async def finish_day(message: types.Message):
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-@dp.message(lambda msg: msg.text and msg.text.lower() == "база знань")
+@dp.message(lambda msg: msg.text and msg.text.lower() == "Інформаційна база")
 async def show_knowledge_categories(message: types.Message):
     records = knowledge_base_sheet.get_all_records()
     categories = sorted(set(row.get('Категорія', '') for row in records if row.get('Категорія')))
     if not categories:
-        await message.answer("База знань поки порожня.", reply_markup=user_menu)
+        await message.answer("Інформаційна база поки порожня.", reply_markup=user_menu)
         return
 
     kb = InlineKeyboardMarkup(
@@ -443,7 +443,7 @@ async def show_knowledge_base_category(call: types.CallbackQuery):
         await call.answer()
         return
 
-    msg = f"📚 <b>База знань — {cat}:</b>\n"
+    msg = f"📚 <b>Інформаційна база — {cat}:</b>\n"
     for row in entries:
         name = row.get("Назва", "-")
         link = row.get("Посилання (або текст)", "-")

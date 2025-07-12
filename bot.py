@@ -25,6 +25,7 @@ ADMIN_IDS = [438830182]   # <-- твій Telegram ID
 logging.basicConfig(level=logging.INFO)
 
 
+
 # --- Google Sheets ---
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
@@ -32,9 +33,11 @@ gs = gspread.authorize(creds)
 TEMPLATE_SHEET = 'Шаблони блоків'
 DAY_SHEET = 'Завдання на день'
 GENERAL_REMINDERS_SHEET = 'Загальні нагадування'
+KNOWLEDGE_SHEET = 'База знань'
 template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
 day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
 general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
+knowledge_sheet = gs.open_by_key(SHEET_KEY).worksheet(KNOWLEDGE_SHEET)
 
 
 # --- Telegram бот ---
@@ -411,14 +414,24 @@ async def finish_day(message: types.Message):
                 day_sheet.update_cell(idx + 2, 10, "FALSE")
     await message.answer("Робочий день завершено! Виконання або невиконання завдання зафіксовано.", reply_markup=user_menu)
 
-@dp.message(F.text.lower() == "база знань")
-async def knowledge_base_placeholder(message: types.Message):
-    await message.answer(
-        "🗂 Функція 'База знань' незабаром стане доступною!\n"
-        "Тут можна буде знаходити важливі посилання, інструкції, документи та іншу інформацію для роботи.",
-        reply_markup=user_menu
-    )
+@dp.message(lambda msg: msg.text and msg.text.lower() == "база знань")
+async def show_knowledge_base(message: types.Message):
+    records = knowledge_sheet.get_all_records()
+    if not records:
+        await message.answer("База знань поки порожня.", reply_markup=user_menu)
+        return
 
+    text = "<b>📚 База знань:</b>\n"
+    for row in records:
+        name = row.get('Назва', '')
+        descr = row.get('Опис', '')
+        link = row.get('Посилання', '')
+        if link:
+            text += f"— <b>{name}</b>: <a href='{link}'>{link}</a>\n"
+        else:
+            text += f"— <b>{name}</b>: {descr}\n"
+    await message.answer(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=user_menu)
+    
 @dp.message(lambda msg: msg.text and msg.text.strip().lower() == 'розпочати день')
 async def choose_blocks_count(message: types.Message):
     kb = types.ReplyKeyboardMarkup(

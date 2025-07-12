@@ -33,10 +33,10 @@ gs = gspread.authorize(creds)
 TEMPLATE_SHEET = 'Шаблони блоків'
 DAY_SHEET = 'Завдання на день'
 GENERAL_REMINDERS_SHEET = 'Загальні нагадування'
-KNOWLEDGE_BASE_SHEET = 'Інформаційна база'
+INFORMATION_BASE_SHEET = 'Інформаційна база'
 template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
 day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
-knowledge_base_sheet = gs.open_by_key(SHEET_KEY).worksheet(KNOWLEDGE_BASE_SHEET)
+information_base_sheet = gs.open_by_key(SHEET_KEY).worksheet(INFORMATION_BASE_SHEET)
 general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
 
 
@@ -404,34 +404,39 @@ async def my_tasks(message: types.Message):
         text += f"— {time}: {task} | {reminder} {status}\n"
     await message.answer(text, parse_mode="HTML", reply_markup=user_menu)
 
-@dp.message(F.text == "Завершити день")
-async def finish_day(message: types.Message):
-    user_id = message.from_user.id
-    today = get_today()
-    records = day_sheet.get_all_records()
-    for idx, row in enumerate(records):
-        if str(row.get("Дата")) == today and str(row.get("Telegram ID")) == str(user_id):
-            if not row.get("Виконано") or row.get("Виконано") not in ["TRUE", "✅"]:
-                day_sheet.update_cell(idx + 2, 10, "FALSE")
-    await message.answer("Робочий день завершено! Виконання або невиконання завдання зафіксовано.", reply_markup=user_menu)
-
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-@dp.message(lambda msg: msg.text and msg.text.lower() == "Інформаційна база")
-async def show_knowledge_categories(message: types.Message):
-    records = knowledge_base_sheet.get_all_records()
-    categories = sorted(set(row.get('Категорія', '') for row in records if row.get('Категорія')))
+@dp.message(lambda msg: msg.text and msg.text.lower() == "інформаційна база")
+async def show_information_categories(message: types.Message):
+    records = information_base_sheet.get_all_records()
+    categories = sorted(set(row["Категорія"] for row in records if row.get("Категорія")))
     if not categories:
-        await message.answer("Інформаційна база поки порожня.", reply_markup=user_menu)
+        await message.answer("База порожня.")
         return
-
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=cat, callback_data=f"kb_cat_{cat}")]
-            for cat in categories
-        ]
+        inline_keyboard=[[InlineKeyboardButton(text=cat, callback_data=f"info_cat_{cat}") ] for cat in categories]
     )
     await message.answer("Оберіть категорію:", reply_markup=kb)
+
+@dp.callback_query(lambda c: c.data.startswith("info_cat_"))
+async def show_information_items(call: types.CallbackQuery):
+    cat = call.data.replace("info_cat_", "")
+    records = information_base_sheet.get_all_records()
+    items = [row for row in records if row.get("Категорія") == cat]
+    if not items:
+        await call.message.answer("Нічого не знайдено.")
+        return
+    text = f"📚 <b>Інформаційна база — {cat}:</b>\n"
+    for row in items:
+        name = row.get("Назва", "")
+        link = row.get("Посилання (або текст)", "")
+        desc = row.get("Опис (опціонально)", "")
+        line = f"— <b>{name}</b>:\n{link}"
+        if desc:
+            line += f"\n<i>{desc}</i>"
+        text += line + "\n\n"
+    await call.message.answer(text.strip(), parse_mode="HTML")
+    await call.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("kb_cat_"))
 async def show_knowledge_base_category(call: types.CallbackQuery):

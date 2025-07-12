@@ -248,7 +248,6 @@ async def main():
 
 # === FSM для особистого нагадування ===
 class PersonalReminderState(StatesGroup):
-    wait_type = State()
     wait_text = State()
     wait_time = State()
 
@@ -301,20 +300,9 @@ def schedule_general_reminders():
 
 @dp.message(lambda msg: msg.text == "Створити нагадування")
 async def create_reminder_start(message: types.Message, state: FSMContext):
-    await message.answer("Вкажіть вид завдання (наприклад, 'Особисте', 'Для магазину' тощо):")
-    await state.set_state(PersonalReminderState.wait_type)
-    
-@dp.message(StateFilter('*'), F.text == "Назад")
-async def universal_back(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)
-
-@dp.message(PersonalReminderState.wait_type)
-async def create_reminder_type(message: types.Message, state: FSMContext):
-    await state.update_data(reminder_type=message.text.strip())
     await message.answer("Введіть текст нагадування:")
     await state.set_state(PersonalReminderState.wait_text)
-
+    
 @dp.message(StateFilter('*'), F.text == "Назад")
 async def universal_back(message: types.Message, state: FSMContext):
     await state.clear()
@@ -339,7 +327,7 @@ async def create_reminder_time(message: types.Message, state: FSMContext):
     today = get_today()
     # Додаємо у Google Таблицю
     day_sheet.append_row([
-        today, "", "", data["reminder_type"], data["reminder_text"], reminder_time, "", user_id, "", ""
+        today, "", "", data["reminder_text"], reminder_time, "", user_id, "", ""
     ])
     # Плануємо нагадування одразу
     remind_dt = datetime.strptime(f"{today} {reminder_time}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
@@ -347,9 +335,9 @@ async def create_reminder_time(message: types.Message, state: FSMContext):
         send_personal_reminder,
         'date',
         run_date=remind_dt,
-        args=[user_id, data["reminder_type"], data["reminder_text"], reminder_time]
+        args=[user_id, data["reminder_text"], reminder_time]
     )
-    await message.answer(f"✅ Особисте нагадування встановлено на {reminder_time}!\n"
+    await message.answer(f"✅ Нагадування встановлено на {reminder_time}!\n"
                          "Вам прийде повідомлення у зазначений час.", reply_markup=user_menu)
     await state.clear()
 

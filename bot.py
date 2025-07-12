@@ -433,24 +433,30 @@ async def show_knowledge_categories(message: types.Message):
     await message.answer("Оберіть категорію:", reply_markup=kb)
 
 @dp.callback_query(lambda c: c.data.startswith("kb_cat_"))
-async def show_knowledge_by_category(call: types.CallbackQuery):
+async def show_knowledge_base_category(call: types.CallbackQuery):
     cat = call.data.replace("kb_cat_", "")
-    records = knowledge_sheet.get_all_records()
-    filtered = [row for row in records if row.get('Категорія', '') == cat]
-    if not filtered:
-        await call.message.answer("Записів у цій категорії немає.")
+    records = knowledge_base_sheet.get_all_records()
+    entries = [row for row in records if str(row.get("Категорія")) == cat]
+    if not entries:
+        await call.message.answer("Нічого не знайдено.")
         await call.answer()
         return
-    text = f"<b>📚 База знань — {cat}:</b>\n"
-    for row in filtered:
-        name = row.get('Назва', '')
-        descr = row.get('Опис', '')
-        link = row.get('Посилання', '')
-        if link:
-            text += f"— <b>{name}</b>: <a href='{link}'>{link}</a>\n"
+
+    msg = f"📚 <b>База знань — {cat}:</b>\n"
+    for row in entries:
+        name = row.get("Назва", "-")
+        link = row.get("Посилання (або текст)", "-")
+        desc = row.get("Опис (опціонально)", "")
+        # Якщо це посилання — форматувати як гіперлінк
+        if link.startswith("http"):
+            link = f'<a href="{link}">{name}</a>'
         else:
-            text += f"— <b>{name}</b>: {descr}\n"
-    await call.message.answer(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=user_menu)
+            link = f"{name}: {link}"
+        msg += f"— {link}"
+        if desc:
+            msg += f"\n   <i>{desc}</i>"
+        msg += "\n"
+    await call.message.answer(msg, parse_mode="HTML", disable_web_page_preview=True)
     await call.answer()
     
 @dp.message(lambda msg: msg.text and msg.text.strip().lower() == 'розпочати день')

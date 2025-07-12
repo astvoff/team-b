@@ -522,8 +522,8 @@ async def main():
     await dp.start_polling(bot)
 
 async def main():
+    schedule_general_reminders()
     scheduler.start()
-    schedule_general_reminders()  # Додаємо планування загальних нагадувань
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

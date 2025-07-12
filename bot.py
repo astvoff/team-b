@@ -344,9 +344,9 @@ async def create_reminder_time(message: types.Message, state: FSMContext):
 async def send_personal_reminder(user_id, reminder_text, reminder_time):
     await bot.send_message(
         user_id,
-        f"<b>Особисте нагадування!</b>\n"
-        f"Текст: {reminder_text}\n"
-        f"Час: {reminder_time}",
+        f"<b>Ваше нагадування!</b>\n"
+        {reminder_text}\n"
+        {reminder_time}",
         parse_mode="HTML"
     )
 

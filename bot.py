@@ -53,7 +53,7 @@ user_menu = types.ReplyKeyboardMarkup(
         [types.KeyboardButton(text="Розпочати день")],
         [types.KeyboardButton(text="Список моїх завдань"), types.KeyboardButton(text="Створити нагадування")],
         [types.KeyboardButton(text="Інформаційна база"), types.KeyboardButton(text="Завершити день")],
-        [types.KeyboardButton(text="Назад")]
+        [types.KeyboardButton(text="Відмінити дію")]
     ],
     resize_keyboard=True
 )
@@ -303,7 +303,7 @@ async def create_reminder_start(message: types.Message, state: FSMContext):
     await message.answer("Введіть текст нагадування:")
     await state.set_state(PersonalReminderState.wait_text)
     
-@dp.message(StateFilter('*'), F.text == "Назад")
+@dp.message(StateFilter('*'), F.text == "Відмінити дію")
 async def universal_back(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)
@@ -314,7 +314,7 @@ async def create_reminder_text(message: types.Message, state: FSMContext):
     await message.answer("Вкажіть час нагадування у форматі HH:MM (наприклад, 14:30):")
     await state.set_state(PersonalReminderState.wait_time)
 
-@dp.message(StateFilter('*'), F.text == "Назад")
+@dp.message(StateFilter('*'), F.text == "Відмінити дію")
 async def universal_back(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)
@@ -459,7 +459,7 @@ async def choose_blocks_count(message: types.Message):
         keyboard=[
             [types.KeyboardButton(text='6'), types.KeyboardButton(text='7')],
             [types.KeyboardButton(text='8'), types.KeyboardButton(text='9')],
-            [types.KeyboardButton(text='Назад')],
+            [types.KeyboardButton(text='Відмінити дію')],
         ],
         resize_keyboard=True
     )
@@ -471,7 +471,7 @@ async def on_blocks_count_chosen(message: types.Message):
     copy_template_blocks_to_today(blocks_count)
     kb = types.ReplyKeyboardMarkup(
         keyboard=[[types.KeyboardButton(text=f"{b} блок")] for b in get_blocks_for_today()] +
-                 [[types.KeyboardButton(text="Назад")]],
+                 [[types.KeyboardButton(text="Відмінити дію")]],
         resize_keyboard=True
     )
     await message.answer(f"Оберіть свій блок:", reply_markup=kb)
@@ -513,7 +513,7 @@ async def select_block(message: types.Message):
     )
     schedule_reminders_for_user(user_id, tasks)
 
-@dp.message(StateFilter('*'), F.text == "Назад")
+@dp.message(StateFilter('*'), F.text == "Відмінити дію")
 async def universal_back(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("⬅️ Повернулись до головного меню.", reply_markup=user_menu)

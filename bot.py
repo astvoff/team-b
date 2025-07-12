@@ -414,15 +414,35 @@ async def finish_day(message: types.Message):
                 day_sheet.update_cell(idx + 2, 10, "FALSE")
     await message.answer("Робочий день завершено! Виконання або невиконання завдання зафіксовано.", reply_markup=user_menu)
 
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
 @dp.message(lambda msg: msg.text and msg.text.lower() == "база знань")
-async def show_knowledge_base(message: types.Message):
+async def show_knowledge_categories(message: types.Message):
     records = knowledge_sheet.get_all_records()
-    if not records:
+    categories = sorted(set(row.get('Категорія', '') for row in records if row.get('Категорія')))
+    if not categories:
         await message.answer("База знань поки порожня.", reply_markup=user_menu)
         return
 
-    text = "<b>📚 База знань:</b>\n"
-    for row in records:
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=cat, callback_data=f"kb_cat_{cat}")]
+            for cat in categories
+        ]
+    )
+    await message.answer("Оберіть категорію:", reply_markup=kb)
+
+@dp.callback_query(lambda c: c.data.startswith("kb_cat_"))
+async def show_knowledge_by_category(call: types.CallbackQuery):
+    cat = call.data.replace("kb_cat_", "")
+    records = knowledge_sheet.get_all_records()
+    filtered = [row for row in records if row.get('Категорія', '') == cat]
+    if not filtered:
+        await call.message.answer("Записів у цій категорії немає.")
+        await call.answer()
+        return
+    text = f"<b>📚 База знань — {cat}:</b>\n"
+    for row in filtered:
         name = row.get('Назва', '')
         descr = row.get('Опис', '')
         link = row.get('Посилання', '')
@@ -430,7 +450,8 @@ async def show_knowledge_base(message: types.Message):
             text += f"— <b>{name}</b>: <a href='{link}'>{link}</a>\n"
         else:
             text += f"— <b>{name}</b>: {descr}\n"
-    await message.answer(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=user_menu)
+    await call.message.answer(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=user_menu)
+    await call.answer()
     
 @dp.message(lambda msg: msg.text and msg.text.strip().lower() == 'розпочати день')
 async def choose_blocks_count(message: types.Message):

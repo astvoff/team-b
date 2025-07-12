@@ -419,7 +419,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 @dp.message(lambda msg: msg.text and msg.text.lower() == "база знань")
 async def show_knowledge_categories(message: types.Message):
-    records = knowledge_sheet.get_all_records()
+    records = knowledge_base_sheet.get_all_records()
     categories = sorted(set(row.get('Категорія', '') for row in records if row.get('Категорія')))
     if not categories:
         await message.answer("База знань поки порожня.", reply_markup=user_menu)

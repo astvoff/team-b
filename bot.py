@@ -306,7 +306,7 @@ def schedule_general_reminders(main_loop):
     import asyncio
     main_loop = asyncio.get_event_loop()
 
- def run_async_job(text, ids_func):
+def run_async_job(text, ids_func):
         asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids_func()), main_loop)
 
     for row in rows:

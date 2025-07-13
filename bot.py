@@ -334,9 +334,10 @@ def schedule_general_reminders():
             ids_func = get_today_users
 
         async def send_general_reminder_job(text=text, ids_func=ids_func):
-            ids = ids_func()
-            print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
-            await send_general_reminder(text, ids)
+    print(f"== GENERAL REMINDER JOB TRIGGERED ==\nText: {text}")
+    ids = ids_func()
+    print(f"IDs to send: {ids}")
+    await send_general_reminder(text, ids)
 
         # Головна різниця — запускати через run_coroutine_threadsafe
         def run_async_job():

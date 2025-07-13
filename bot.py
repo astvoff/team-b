@@ -367,7 +367,7 @@ def schedule_general_reminders():
             print("[DEBUG] skip row (no matching mode)\n")
             continue
 
-        async def job(text=text, ids_func=ids_func):
+        async def job(text=text, ids_func=ids_func, usernames=usernames):
             print("[DEBUG][JOB TRIGGERED]", text, usernames)
             ids = ids_func()
             print(f"[DEBUG][GENERAL REMINDER] Text: {text} IDs: {ids}")
@@ -385,7 +385,7 @@ def schedule_general_reminders():
             id=f"general-{day}-{hour}-{minute}",
             replace_existing=True
         )
-
+        
 # --- Навігаційне меню користувача ---
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):

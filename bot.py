@@ -253,28 +253,31 @@ class PersonalReminderState(StatesGroup):
     wait_text = State()
     wait_time = State()
 
-    # === Штат (staff) ===
+  # Отримати Telegram ID всіх співробітників з листа "Штат"
 def get_all_staff_user_ids():
-    """Отримати всі Telegram ID зі 'Штат'."""
-    records = staff_sheet.get_all_records()
-    user_ids = []
-    for row in records:
-        tid = row.get('Telegram ID')
-        if tid:
+    # !!! Перевір, щоб колонка з юзернеймами/ID мала унікальне ім’я (наприклад, 'Telegram ID')
+    staff_records = staff_sheet.get_all_records()
+    ids = []
+    for row in staff_records:
+        uid = row.get("Telegram ID") or row.get("User ID")
+        if uid:
             try:
-                user_ids.append(int(tid))
+                ids.append(int(uid))
             except Exception:
-                pass
-    return user_ids
+                continue
+    return ids
 
+# Отримати Telegram ID тих, хто обрав блок сьогодні
 def get_today_users():
-    """Отримати Telegram ID тих, хто обрав блок сьогодні."""
     today = get_today()
     records = day_sheet.get_all_records()
     user_ids = set()
     for row in records:
         if str(row.get("Дата")) == today and row.get("Telegram ID"):
-            user_ids.add(int(row["Telegram ID"]))
+            try:
+                user_ids.add(int(row["Telegram ID"]))
+            except Exception:
+                continue
     return list(user_ids)
 
 async def send_general_reminder(text, ids):
@@ -303,11 +306,15 @@ def schedule_general_reminders():
             continue
         hour, minute = map(int, time_str.split(":"))
 
-        # Обираємо, кому розсилати: всім зі “Штат” чи тим, хто обрав блок
-        get_ids = get_all_staff_user_ids if send_to_all else get_today_users
+        # Обираємо функцію для отримання ID
+        ids_func = get_all_staff_user_ids if send_to_all else get_today_users
+
+        async def job(text=text, ids_func=ids_func):
+            ids = ids_func()
+            await send_general_reminder(text, ids)
 
         scheduler.add_job(
-            lambda t=text, get_ids=get_ids: asyncio.create_task(send_general_reminder(t, get_ids())),
+            job,
             'cron',
             day_of_week=weekday_num,
             hour=hour,
@@ -315,8 +322,7 @@ def schedule_general_reminders():
             id=f"general-{day}-{hour}-{minute}",
             replace_existing=True
         )
-
-
+        
 @dp.message(lambda msg: msg.text == "Створити нагадування")
 async def create_reminder_start(message: types.Message, state: FSMContext):
     await message.answer("Введіть текст нагадування:")

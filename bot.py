@@ -327,6 +327,7 @@ async def reminder_confirmed(message: types.Message, state: FSMContext):
         await state.clear()
         await message.answer("Дію скасовано.", reply_markup=admin_menu_kb)
         return
+
     data = await state.get_data()
     row = [
         data.get('day', ''),
@@ -343,6 +344,12 @@ async def reminder_confirmed(message: types.Message, state: FSMContext):
     try:
         general_reminders_sheet.append_row(row, value_input_option='USER_ENTERED')
         print("[DEBUG][append_row] Успішно додано")
+        
+        # --- Оновлюємо всі задачі планувальника:
+        scheduler.remove_all_jobs()
+        schedule_general_reminders(main_loop)
+        print("[DEBUG][scheduler] Планувальник оновлено!")
+
         await message.answer("✅ Нагадування успішно створено!", reply_markup=admin_menu_kb)
     except Exception as e:
         print(f"[ERROR][append_row] {e}")

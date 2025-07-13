@@ -273,16 +273,8 @@ async def reminder_got_time(message: types.Message, state: FSMContext):
     await state.clear()
 
 def get_all_staff_user_ids():
-    ids = []
-    for r in staff_sheet.get_all_records():
-        try:
-            user_id = int(str(r.get("Telegram ID", "")).strip())
-            if user_id:
-                ids.append(user_id)
-        except Exception as e:
-            print(f"[DEBUG][get_all_staff_user_ids] Exception: {e}")
-    print(f"[DEBUG][get_all_staff_user_ids] Result: {ids}")
-    return ids
+    print("[DEBUG][get_all_staff_user_ids] Повертаємо тестовий ID [438830182]")
+    return [438830182]
 
 def get_today_users():
     today = get_today()
@@ -304,9 +296,9 @@ def get_staff_user_ids_by_username(username):
         uname = str(r.get("Username", "")).strip().lstrip('@').lower()
         print(f"[DEBUG][Username row] {uname}")
         if uname == username and r.get("Telegram ID"):
-            print(f"[DEBUG][MATCH] {uname} == {username} -> {r['Telegram ID']}")
             try:
                 ids.append(int(r["Telegram ID"]))
+                print(f"[DEBUG][MATCH] {uname} == {username} -> {r['Telegram ID']}")
             except Exception as e:
                 print(f"[DEBUG][get_staff_user_ids_by_username] Exception: {e}")
     print(f"[DEBUG][get_staff_user_ids_by_username] Result IDs: {ids}")
@@ -319,9 +311,9 @@ async def send_general_reminder(text, ids):
             print(f"[DEBUG][send_general_reminder] Надсилаємо {user_id}")
             await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
         except Exception as e:
-            print(f"[ERROR][send_general_reminder] Cannot send to {user_id}: {e}")
+            print(f"[ERROR][send_general_reminder] Cannot send to user {user_id}: {e}")
 
-def schedule_general_reminders(loop):
+def schedule_general_reminders(main_loop):
     rows = general_reminders_sheet.get_all_records()
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
@@ -330,7 +322,7 @@ def schedule_general_reminders(loop):
     }
 
     def run_async_job(text, ids_func):
-        asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids_func()), loop)
+        asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids_func()), main_loop)
 
     for row in rows:
         print(f"[DEBUG][general loop] row: {row}")
@@ -344,13 +336,12 @@ def schedule_general_reminders(loop):
 
         if not day or not time_str or not text or not (send_all or send_shift or send_individual):
             continue
-
         weekday_num = days_map.get(day)
         if weekday_num is None:
             continue
-
         hour, minute = map(int, time_str.split(":"))
 
+        # Режими розсилки
         if send_all:
             ids_func = get_all_staff_user_ids
         elif send_shift:
@@ -510,5 +501,4 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())

@@ -11,6 +11,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
+main_loop = None
 
 # --- Константи ---
 load_dotenv()
@@ -324,12 +325,9 @@ def schedule_general_reminders():
     }
 
     def run_async_job(text, ids_func):
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.get_event_loop()
-        asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids_func()), loop)
-
+        global main_loop
+        asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids_func()), main_loop)
+    
     for row in rows:
         day = str(row.get('День', '')).strip().lower()
         time_str = str(row.get('Час', '')).strip()
@@ -499,6 +497,8 @@ async def universal_back(message: types.Message, state: FSMContext):
 
 # --- Запуск ---
 async def main():
+    global main_loop
+    main_loop = asyncio.get_running_loop()
     schedule_general_reminders()
     scheduler.start()
     await dp.start_polling(bot)

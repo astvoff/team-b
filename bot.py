@@ -316,6 +316,8 @@ from functools import partial
 
 import functools
 
+import functools
+
 def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()
     days_map = {
@@ -323,7 +325,7 @@ def schedule_general_reminders():
         "четвер": 3, "пʼятниця": 4, "субота": 5, "неділя": 6,
         "пятниця": 4, "п’ятниця": 4
     }
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     for row in rows:
         day = row.get('День', '').strip().lower()
@@ -331,7 +333,6 @@ def schedule_general_reminders():
         text = row.get('Текст', '').strip()
         send_to_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
         usernames = str(row.get('Usernames', '')).strip()
-
         if not day or not time_str or not text:
             continue
         weekday_num = days_map.get(day)
@@ -339,7 +340,7 @@ def schedule_general_reminders():
             continue
         hour, minute = map(int, time_str.split(":"))
 
-        # === Кому розсилати
+        # Логіка розсилки
         if send_to_all:
             ids_func = get_all_staff_user_ids
             func_args = ()
@@ -355,6 +356,7 @@ def schedule_general_reminders():
             print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
             await send_general_reminder(text, ids)
 
+        # Всі job плануємо так — через event loop
         def sync_job(text=text, ids_func=ids_func, func_args=func_args):
             asyncio.run_coroutine_threadsafe(job(text, ids_func, func_args), loop)
 

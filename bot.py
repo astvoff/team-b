@@ -376,6 +376,8 @@ def schedule_general_reminders(main_loop):
             print(f"[ERROR][run_async_job] Exception: {e}")
 
     for row in rows:
+        if not any(row.values()):
+            continue  # Пропустити повністю порожній рядок
         print(f"[DEBUG][general loop] row: {row}")
         day = str(row.get('День', '')).strip().lower()
         time_str = str(row.get('Час', '')).strip()

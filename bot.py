@@ -273,19 +273,19 @@ async def reminder_got_time(message: types.Message, state: FSMContext):
     await state.clear()
 
 def get_all_staff_user_ids():
+    print("[DEBUG][get_all_staff_user_ids] Вхід у функцію")
     ids = []
-    staff_records = staff_sheet.get_all_records()
-    print("[DEBUG][get_all_staff_user_ids] staff_records:", staff_records)
-    for i, r in enumerate(staff_records):
-        print(f"[DEBUG][get_all_staff_user_ids] Row {i}: Telegram ID raw value: {repr(r.get('Telegram ID', ''))}")
+    for r in staff_sheet.get_all_records():
+        print("[DEBUG][get_all_staff_user_ids] перевірка:", r)
         try:
-            user_id = int(str(r.get("Telegram ID", "")).strip())
+            user_id = int(r.get("Telegram ID", 0))
             if user_id:
+                print("[DEBUG][get_all_staff_user_ids] Додаємо:", user_id)
                 ids.append(user_id)
         except Exception as e:
-            print(f"[DEBUG][get_all_staff_user_ids] Cannot parse: {r.get('Telegram ID')} — {e}")
+            print("[DEBUG][get_all_staff_user_ids] Помилка:", e)
             continue
-    print("[DEBUG][get_all_staff_user_ids] Final IDs:", ids)
+    print("[DEBUG][get_all_staff_user_ids] Всі ID:", ids)
     return ids
     
 def get_today_users():
@@ -355,6 +355,7 @@ def schedule_general_reminders():
         hour, minute = map(int, time_str.split(":"))
 
         if send_all:
+            print("[DEBUG][general loop] Загальна розсилка активна!")
             ids_func = get_all_staff_user_ids
         elif send_shift:
             ids_func = get_today_users

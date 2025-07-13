@@ -234,7 +234,6 @@ def schedule_general_reminders():
         "субота": 5, "неділя": 6
     }
 
-    # Всі Telegram ID зі "Штат"
     def get_all_staff_user_ids():
         staff_records = staff_sheet.get_all_records()
         ids = []
@@ -247,7 +246,6 @@ def schedule_general_reminders():
                 continue
         return ids
 
-    # Telegram ID тих, хто сьогодні на зміні
     def get_today_users():
         today = get_today()
         records = day_sheet.get_all_records()
@@ -260,7 +258,6 @@ def schedule_general_reminders():
                     continue
         return list(user_ids)
 
-    # Telegram ID для одного юзера по Username
     def get_staff_user_ids_by_username(username):
         username = str(username).strip().lower()
         staff_records = staff_sheet.get_all_records()
@@ -274,7 +271,6 @@ def schedule_general_reminders():
                     continue
         return ids
 
-    # Надсилання повідомлень
     async def send_general_reminder(text, ids):
         for user_id in ids:
             try:
@@ -282,7 +278,6 @@ def schedule_general_reminders():
             except Exception as e:
                 print(f"[ERROR] Cannot send to user {user_id}: {e}")
 
-    # Створюємо задачі-джоби по кожному нагадуванню з таблиці
     for row in rows:
         day = str(row.get('День', '')).strip().lower()
         time_str = str(row.get('Час', '')).strip()
@@ -301,7 +296,6 @@ def schedule_general_reminders():
 
         hour, minute = map(int, time_str.split(":"))
 
-        # Визначаємо тип розсилки
         if send_all:
             ids_func = get_all_staff_user_ids
         elif send_shift:
@@ -311,12 +305,10 @@ def schedule_general_reminders():
         else:
             continue
 
-        # Створюємо асинхронну задачу для APScheduler
         async def job(text=text, ids_func=ids_func):
             ids = ids_func()
-            print(f"[GENERAL REMINDER JOB] {text} | ids: {ids}")
             await send_general_reminder(text, ids)
- 
+
         scheduler.add_job(
             job,
             'cron',

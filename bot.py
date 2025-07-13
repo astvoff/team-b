@@ -300,14 +300,14 @@ def get_today_users():
     return list(user_ids)
 
 def get_staff_user_ids_by_usernames(usernames):
+    print(f"[DEBUG][get_staff_user_ids_by_usernames] usernames param: {repr(usernames)}")
     staff_records = staff_sheet.get_all_records()
     username_set = set([u.strip().lower() for u in usernames.split(",") if u.strip()])
     print(f"[DEBUG][get_staff_user_ids_by_usernames] username_set: {username_set}")
-
     ids = []
     for r in staff_records:
         uname = str(r.get("Username", "")).strip().lower()
-        print(f"[DEBUG][get_staff_user_ids_by_usernames] checking row: username={uname}, telegram_id={r.get('Telegram ID')}")
+        print(f"[DEBUG][get_staff_user_ids_by_usernames] checking row: username={repr(uname)}, telegram_id={r.get('Telegram ID')}")
         if uname in username_set and r.get("Telegram ID"):
             try:
                 ids.append(int(r["Telegram ID"]))
@@ -330,49 +330,48 @@ async def send_general_reminder(text, ids):
 
 def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()
-    print("[DEBUG][schedule_general_reminders] rows:", rows)
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
-        "четвер": 3, "пʼятниця": 4, "субота": 5, "неділя": 6,
-        "пятниця": 4, "п’ятниця": 4
+        "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
+        "субота": 5, "неділя": 6
     }
     for row in rows:
-        day = row.get('День', '').strip().lower()
-        time_str = row.get('Час', '').strip()
-        text = row.get('Текст', '').strip()
+        day = str(row.get('День', '')).strip().lower()
+        time_str = str(row.get('Час', '')).strip()
+        text = str(row.get('Текст', '')).strip()
         send_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
         send_shift = str(row.get('Розсилка, хто на зміні', '')).strip().upper() == "TRUE"
         send_individual = str(row.get('Індивідуальна розсилка', '')).strip().upper() == "TRUE"
         usernames = str(row.get('Username', '')).strip()
-        print(f"\n[DEBUG] Row: day={day}, time={time_str}, text={repr(text)}, send_all={send_all}, send_shift={send_shift}, send_individual={send_individual}, usernames={usernames}")
+        print(f"[DEBUG] Row: day={day}, time={time_str}, text='{text}', send_all={send_all}, send_shift={send_shift}, send_individual={send_individual}, usernames={usernames}, raw_row={row}")
 
-        if not day or not time_str or not text:
-            print("[DEBUG] skip row (missing params)")
+        if not day or not time_str or not text or not (send_all or send_shift or send_individual):
+            print("[DEBUG] skip row (missing params)\n")
             continue
+
         weekday_num = days_map.get(day)
         if weekday_num is None:
-            print("[DEBUG] skip row (unknown day):", day)
+            print("[DEBUG] skip row (invalid day)\n")
             continue
+
         hour, minute = map(int, time_str.split(":"))
 
-        # Кожна опція окремо (можна декілька галочок)
-        targets = []
         if send_all:
-            targets.append(get_all_staff_user_ids)
-        if send_shift:
-            targets.append(get_today_users)
-        if send_individual and usernames:
-            targets.append(lambda: get_staff_user_ids_by_usernames(usernames))
-        if not targets:  # fallback якщо нічого не вибрано
-            print("[DEBUG] skip row (no target selected)")
+            ids_func = get_all_staff_user_ids
+        elif send_shift:
+            ids_func = get_today_users
+        elif send_individual and usernames:
+            ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
+        else:
+            print("[DEBUG] skip row (no matching mode)\n")
             continue
 
-        async def job(text=text, targets=targets):
-            ids = set()
-            for func in targets:
-                ids.update(func())
-            ids = list(ids)
+        async def job(text=text, ids_func=ids_func):
+            ids = ids_func()
             print(f"[DEBUG][GENERAL REMINDER] Text: {text} IDs: {ids}")
+            print(f"[GENERAL REMINDER] To: {ids} | Text: '{text}'\n")
+            if not ids:
+                print("[WARNING] No recipients to send!\n")
             await send_general_reminder(text, ids)
 
         scheduler.add_job(
@@ -381,7 +380,7 @@ def schedule_general_reminders():
             day_of_week=weekday_num,
             hour=hour,
             minute=minute,
-            id=f"general-{day}-{hour}-{minute}-{hash(text)}",
+            id=f"general-{day}-{hour}-{minute}",
             replace_existing=True
         )
 

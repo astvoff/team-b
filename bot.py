@@ -322,25 +322,19 @@ def schedule_general_reminders():
         text = row.get('Текст', '').strip()
         send_to_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
         usernames = str(row.get('Usernames', '')).strip()
-        send_to_block = str(row.get('Загальна розсилка', '')).strip().upper() == "FALSE"
         if not day or not time_str or not text:
             continue
         weekday_num = days_map.get(day)
         if weekday_num is None:
             continue
         hour, minute = map(int, time_str.split(":"))
-
-        # Головна логіка вибору ids_func:
+        # Головна логіка: якщо є usernames — розсилаємо тільки їм, інакше по флагу.
         if send_to_all:
             ids_func = get_all_staff_user_ids
-        elif send_to_block and usernames:
-            ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
-        elif send_to_block:
-            ids_func = get_today_users
         elif usernames:
             ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
         else:
-            ids_func = get_today_users  # fallback
+            ids_func = get_today_users
 
         async def job(text=text, ids_func=ids_func):
             ids = ids_func()
@@ -363,6 +357,16 @@ def schedule_general_reminders():
             id=f"general-{day}-{hour}-{minute}",
             replace_existing=True
         )
+
+async def send_general_reminder(text, ids):
+    print("send_general_reminder called:", text, ids)
+    for user_id in ids:
+        try:
+            print(f"Sending to {user_id}")
+            await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
+        except Exception as e:
+            print(f"Cannot send to user {user_id}: {e}")
+            logging.warning(f"Cannot send to user {user_id}: {e}")
 
 # --- Запуск loop в main ---
 async def main():

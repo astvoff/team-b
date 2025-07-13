@@ -354,7 +354,8 @@ def schedule_general_reminders():
         elif send_shift:
             ids_func = get_today_users
         elif send_individual and username:
-            ids_func = lambda: get_staff_user_ids_by_username(username)
+            _username = username
+            ids_func = lambda _username=_username: get_staff_user_ids_by_username(_username)
         else:
             continue
 

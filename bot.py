@@ -271,103 +271,113 @@ async def reminder_got_time(message: types.Message, state: FSMContext):
     await message.answer(f"Нагадування створено на {time_str}!\n\nТекст: {text}", reply_markup=user_menu)
     await state.clear()
 
-# --- Загальні нагадування (розсилка) ---
+# --- Загальні нагадування з print-логами ---
 
 def get_all_staff_user_ids():
-    """ID усіх співробітників з листа 'Штат'."""
+    staff_records = staff_sheet.get_all_records()
+    print("[DEBUG][get_all_staff_user_ids] staff_records:", staff_records)
     ids = []
-    for r in staff_sheet.get_all_records():
-        try:
-            user_id = int(r.get("Telegram ID", 0))
-            if user_id:
-                ids.append(user_id)
-        except Exception:
-            continue
+    for r in staff_records:
+        tg_id = r.get("Telegram ID")
+        if tg_id and str(tg_id).isdigit():
+            ids.append(int(tg_id))
+    print("[DEBUG][get_all_staff_user_ids] IDs:", ids)
     return ids
 
 def get_today_users():
-    """ID тих, хто обрав блок сьогодні (з аркуша 'Завдання на день')."""
     today = get_today()
+    records = day_sheet.get_all_records()
+    print("[DEBUG][get_today_users] today:", today)
     user_ids = set()
-    for row in day_sheet.get_all_records():
+    for row in records:
+        print("[DEBUG][get_today_users] row:", row)
         if str(row.get("Дата")) == today and row.get("Telegram ID"):
             try:
                 user_ids.add(int(row["Telegram ID"]))
-            except Exception:
-                continue
+            except Exception as e:
+                print("[ERROR][get_today_users] convert:", row["Telegram ID"], e)
+    print("[DEBUG][get_today_users] IDs:", list(user_ids))
     return list(user_ids)
 
 def get_staff_user_ids_by_usernames(usernames):
-    """ID за списком Username (через кому, без @)."""
-    username_set = set(u.strip().lower() for u in usernames.split(",") if u.strip())
+    staff_records = staff_sheet.get_all_records()
+    username_set = set([u.strip().lower() for u in usernames.split(",") if u.strip()])
+    print(f"[DEBUG][get_staff_user_ids_by_usernames] usernames: {usernames}")
+    print(f"[DEBUG][get_staff_user_ids_by_usernames] username_set: {username_set}")
     ids = []
-    for r in staff_sheet.get_all_records():
+    for r in staff_records:
         uname = str(r.get("Username", "")).strip().lower()
-        if uname in username_set and r.get("Telegram ID"):
-            try:
-                ids.append(int(r["Telegram ID"]))
-            except Exception:
-                continue
+        print(f"[DEBUG] checking row: username={uname}, telegram_id={r.get('Telegram ID')}")
+        if uname in username_set:
+            tg_id = r.get("Telegram ID")
+            if tg_id and str(tg_id).isdigit():
+                print(f"[FOUND] Username '{uname}' matched, Telegram ID: {tg_id}")
+                ids.append(int(tg_id))
+            else:
+                print(f"[SKIP] Username '{uname}' matched, but Telegram ID is empty or invalid: {tg_id}")
+    print(f"[DEBUG][get_staff_user_ids_by_usernames] Result IDs: {ids}")
     return ids
 
 async def send_general_reminder(text, ids):
+    print(f"[GENERAL REMINDER] To: {ids} | Text: {text!r}")
+    if not ids:
+        print("[WARNING] No recipients to send!")
     for user_id in ids:
         try:
+            print(f"[SENDING] To user_id: {user_id}")
             await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
         except Exception as e:
-            logging.warning(f"Cannot send to user {user_id}: {e}")
+            print(f"[ERROR] Cannot send to user {user_id}: {e}")
 
 def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()
+    print("[DEBUG][schedule_general_reminders] Loaded rows:", rows)
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
-        "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
-        "субота": 5, "неділя": 6
+        "четвер": 3, "пʼятниця": 4, "субота": 5, "неділя": 6,
+        "пятниця": 4, "п’ятниця": 4
     }
     for row in rows:
         day = row.get('День', '').strip().lower()
         time_str = row.get('Час', '').strip()
         text = row.get('Текст', '').strip()
-        send_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
-        send_shift = str(row.get('Розсилка, хто на зміні', '')).strip().upper() == "TRUE"
-        send_personal = str(row.get('Індивідуальна розсилка', '')).strip().upper() == "TRUE"
-        usernames = str(row.get('Username', '')).strip()
+        usernames = str(row.get('Username', '') or row.get('Usernames', '')).strip()
+        send_to_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
+        send_to_block = str(row.get('Розсилка, хто на зміні', '')).strip().upper() == "TRUE"
+        individual_send = str(row.get('Індивідуальна розсилка', '')).strip().upper() == "TRUE"
+
+        print(f"[DEBUG][schedule_general_reminders] row: {row}")
+
         if not day or not time_str or not text:
+            print(f"[SKIP] No day, time or text for row: {row}")
             continue
         weekday_num = days_map.get(day)
         if weekday_num is None:
+            print(f"[SKIP] Day not found: {day}")
             continue
-        try:
-            hour, minute = map(int, time_str.split(":"))
-        except Exception:
-            continue
+        hour, minute = map(int, time_str.split(":"))
 
-        def ids_func():
-            ids = set()
-            if send_all:
-                ids.update(get_all_staff_user_ids())
-            if send_shift:
-                ids.update(get_today_users())
-            if send_personal and usernames:
-                ids.update(get_staff_user_ids_by_usernames(usernames))
-            return list(ids)
+        # Вибір цільової аудиторії
+        if send_to_all:
+            ids_func = get_all_staff_user_ids
+            print("[DEBUG] send_to_all: TRUE")
+        elif send_to_block:
+            ids_func = get_today_users
+            print("[DEBUG] send_to_block: TRUE")
+        elif individual_send and usernames:
+            ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
+            print("[DEBUG] individual_send: TRUE, usernames:", usernames)
+        else:
+            print(f"[SKIP] No suitable recipients for: {row}")
+            continue
 
         async def job(text=text, ids_func=ids_func):
             ids = ids_func()
-            print(f"[DEBUG][GENERAL REMINDER] Text: {text}\nIDs: {ids}")
-            if not ids:
-                print("[WARNING] No recipients for reminder!")
+            print(f"[DEBUG][GENERAL REMINDER] Text: {text} IDs: {ids}")
             await send_general_reminder(text, ids)
 
-        def run_async_job():
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.get_event_loop()
-            loop.create_task(job())
-
         scheduler.add_job(
-            run_async_job,
+            job,
             'cron',
             day_of_week=weekday_num,
             hour=hour,

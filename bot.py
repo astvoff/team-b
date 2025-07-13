@@ -302,18 +302,19 @@ def get_today_users():
 def get_staff_user_ids_by_usernames(usernames):
     staff_records = staff_sheet.get_all_records()
     username_set = set([u.strip().lower() for u in usernames.split(",") if u.strip()])
-    print("[DEBUG][get_staff_user_ids_by_usernames] username_set:", username_set)
+    print(f"[DEBUG][get_staff_user_ids_by_usernames] username_set: {username_set}")
+
     ids = []
     for r in staff_records:
         uname = str(r.get("Username", "")).strip().lower()
-        print("[DEBUG][get_staff_user_ids_by_usernames] checking row: username={}, telegram_id={}".format(uname, r.get("Telegram ID", "")))
+        print(f"[DEBUG][get_staff_user_ids_by_usernames] checking row: username={uname}, telegram_id={r.get('Telegram ID')}")
         if uname in username_set and r.get("Telegram ID"):
             try:
                 ids.append(int(r["Telegram ID"]))
             except Exception as e:
-                print("[DEBUG][get_staff_user_ids_by_usernames] Cannot parse Telegram ID:", r["Telegram ID"], e)
+                print(f"[DEBUG][get_staff_user_ids_by_usernames] ERROR: {e}")
                 continue
-    print("[DEBUG][get_staff_user_ids_by_usernames] Result IDs:", ids)
+    print(f"[DEBUG][get_staff_user_ids_by_usernames] Result IDs: {ids}")
     return ids
 
 async def send_general_reminder(text, ids):

@@ -76,6 +76,13 @@ def now_ua():
 def get_today():
     return now_ua().strftime('%Y-%m-%d')
 
+def is_true(val):           # <-- Ось тут
+    if isinstance(val, bool):
+        return val is True
+    if isinstance(val, str):
+        return val.strip().lower() in ('true', 'yes', '1', 'y', 'так')
+    return False
+
 def copy_template_blocks_to_today(blocks_count):
     records = template_sheet.get_all_records()
     today = get_today()
@@ -301,7 +308,8 @@ def get_today_users():
         rows = day_sheet.get_all_records()
         print(f"[DEBUG][get_today_users] day_sheet rows: {len(rows)}")
         for row in rows:
-            print(f"[DEBUG][get_today_users] row: {row}")
+    print(f"[DEBUG][general loop] row: {row}")
+    print(f"[DEBUG][flags] Загальна: {is_true(row.get('Загальна розсилка', ''))}, Хто на зміні: {is_true(row.get('Розсилка, хто на зміні', ''))}, Індивід: {is_true(row.get('Індивідуальна розсилка', ''))}")
             if str(row.get("Дата")) == today and row.get("Telegram ID"):
                 try:
                     user_ids.add(int(row["Telegram ID"]))
@@ -372,7 +380,7 @@ def schedule_general_reminders(main_loop):
         day = str(row.get('День', '')).strip().lower()
         time_str = str(row.get('Час', '')).strip()
         text = str(row.get('Текст', '')).strip()
-        send_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
+        send_all = str(row.get('Загальна', '')).strip().upper() == "TRUE"
         send_shift = str(row.get('Розсилка, хто на зміні', '')).strip().upper() == "TRUE"
         send_individual = str(row.get('Індивідуальна розсилка', '')).strip().upper() == "TRUE"
         username = str(row.get('Username', '')).strip()

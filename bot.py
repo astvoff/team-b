@@ -311,6 +311,9 @@ async def send_general_reminder(text, ids):
         except Exception as e:
             logging.warning(f"Cannot send to user {user_id}: {e}")
 
+import asyncio
+from functools import partial
+
 def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()
     days_map = {
@@ -318,6 +321,7 @@ def schedule_general_reminders():
         "четвер": 3, "пʼятниця": 4, "субота": 5, "неділя": 6,
         "пятниця": 4, "п’ятниця": 4
     }
+    loop = asyncio.get_event_loop()
     for row in rows:
         day = row.get('День', '').strip().lower()
         time_str = row.get('Час', '').strip()
@@ -353,12 +357,13 @@ def schedule_general_reminders():
             print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
             await send_general_reminder(text, ids)
 
-        # partial підв'язує всі аргументи явно (уникнення late binding!)
+        def sync_job(text=text, ids_func=ids_func, func_args=func_args):
+            asyncio.run_coroutine_threadsafe(
+                job(text, ids_func, func_args), loop
+            )
+
         scheduler.add_job(
-            partial(
-                lambda text, ids_func, func_args: asyncio.create_task(job(text, ids_func, func_args)),
-                text, ids_func, func_args
-            ),
+            sync_job,
             'cron',
             day_of_week=weekday_num,
             hour=hour,

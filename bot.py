@@ -307,17 +307,16 @@ def schedule_general_reminders():
         if weekday_num is None:
             continue
         hour, minute = map(int, time_str.split(":"))
-        # обираємо ids
         ids_func = get_all_staff_user_ids if send_to_all else get_today_users
 
-        async def job(text=text, ids_func=ids_func):
+        async def send_general_reminder_job(text=text, ids_func=ids_func):
             ids = ids_func()
             print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
             await send_general_reminder(text, ids)
 
-        # Додаємо job
+        # Додаємо job як async
         scheduler.add_job(
-            lambda text=text, ids_func=ids_func: asyncio.create_task(job(text, ids_func)),
+            send_general_reminder_job,
             'cron',
             day_of_week=weekday_num,
             hour=hour,

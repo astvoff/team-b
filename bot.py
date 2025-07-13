@@ -253,8 +253,6 @@ class PersonalReminderState(StatesGroup):
     wait_text = State()
     wait_time = State()
 
- import asyncio
-
 # Зберігаємо loop глобально (оголошуєш на початку файлу)
 main_loop = None
 

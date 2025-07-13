@@ -187,8 +187,6 @@ async def notify_admin_if_needed(user_id, row, task, reminder, block):
                 parse_mode="HTML"
             )
 
-import asyncio
-
 def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()
     days_map = {

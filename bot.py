@@ -330,15 +330,18 @@ def schedule_general_reminders():
             continue
         hour, minute = map(int, time_str.split(":"))
 
-        # === ОНОВЛЕНА ЛОГІКА ===
+        # --- ГОЛОВНА ЛОГІКА ---
         if general == "TRUE":
             ids_func = get_all_staff_user_ids
         elif general == "FALSE":
-            ids_func = get_today_users
+            if usernames:
+                ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
+            else:
+                ids_func = get_today_users
         elif usernames:
             ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
         else:
-            continue  # Якщо нічого не вказано
+            continue  # нічого не відправляти
 
         async def job(text=text, ids_func=ids_func):
             ids = ids_func()

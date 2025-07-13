@@ -319,6 +319,7 @@ import functools
 import functools
 
 def schedule_general_reminders():
+    print(">>> RUNNING schedule_general_reminders")
     rows = general_reminders_sheet.get_all_records()
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,

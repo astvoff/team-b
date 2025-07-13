@@ -273,15 +273,15 @@ async def reminder_got_time(message: types.Message, state: FSMContext):
     await state.clear()
 
 def get_all_staff_user_ids():
-    """ID усіх співробітників з листа 'Штат'."""
     ids = []
     for r in staff_sheet.get_all_records():
         try:
-            user_id = int(r.get("Telegram ID", 0))
+            user_id = int(str(r.get("Telegram ID", "")).strip())
             if user_id:
                 ids.append(user_id)
-        except Exception:
-            continue
+        except Exception as e:
+            print("[ERROR][get_all_staff_user_ids]", e, r)
+    print("[DEBUG][get_all_staff_user_ids] IDs:", ids)
     return ids
 
 def get_today_users():
@@ -296,17 +296,19 @@ def get_today_users():
                 continue
     return list(user_ids)
 
-def get_staff_user_ids_by_username(username):
-    """ID за Username (без @, регістр не важливий)."""
-    username = str(username).strip().lstrip('@').lower()
+def get_staff_user_ids_by_usernames(usernames):
+    username_set = set(u.strip().lstrip('@').lower() for u in usernames.split(",") if u.strip())
+    print("[DEBUG][get_staff_user_ids_by_usernames] username_set:", username_set)
     ids = []
     for r in staff_sheet.get_all_records():
         uname = str(r.get("Username", "")).strip().lstrip('@').lower()
-        if uname == username and r.get("Telegram ID"):
+        print(f"[DEBUG][Username row] {uname}")
+        if uname in username_set and r.get("Telegram ID"):
             try:
                 ids.append(int(r["Telegram ID"]))
-            except Exception:
-                continue
+            except Exception as e:
+                print("[ERROR][get_staff_user_ids_by_usernames]", e, r)
+    print("[DEBUG][get_staff_user_ids_by_usernames] Result IDs:", ids)
     return ids
 
 async def send_general_reminder(text, ids):

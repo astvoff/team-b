@@ -327,7 +327,7 @@ async def send_general_reminder(text, ids):
             await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
         except Exception as e:
             print(f"[ERROR] Cannot send to user {user_id}: {e}")
-
+            
 def schedule_general_reminders():
     print("[DEBUG] schedule_general_reminders() called!")
     rows = general_reminders_sheet.get_all_records()

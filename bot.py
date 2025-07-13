@@ -260,7 +260,6 @@ def schedule_general_reminders():
         return list(user_ids)
 
     def get_staff_user_ids_by_username(username):
-        # Видаляємо пробіли, @, приводимо до нижнього регістру
         username = str(username).strip().lstrip('@').lower()
         print(f"[DEBUG] Шукаємо username: '{username}'")
         staff_records = staff_sheet.get_all_records()
@@ -268,11 +267,11 @@ def schedule_general_reminders():
         for r in staff_records:
             uname = str(r.get("Username", "")).strip().lstrip('@').lower()
             print(f"[DEBUG] Порівнюємо '{uname}' (таблиця) з '{username}' (вхід)")
-        if uname == username and r.get("Telegram ID"):
-            try:
-                ids.append(int(r["Telegram ID"]))
-            except Exception as e:
-                print(f"Error parsing ID: {e}")
+            if uname == username and r.get("Telegram ID"):
+                try:
+                    ids.append(int(r["Telegram ID"]))
+                except Exception as e:
+                    print(f"Error parsing ID: {e}")
         print(f"[DEBUG] Знайдені ID: {ids}")
         return ids
 

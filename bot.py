@@ -275,6 +275,7 @@ async def reminder_got_time(message: types.Message, state: FSMContext):
 def get_all_staff_user_ids():
     ids = []
     for r in staff_sheet.get_all_records():
+        print(f"[DEBUG][get_all_staff_user_ids] row: {r}")
         try:
             user_id = int(str(r.get("Telegram ID", "")).strip())
             if user_id:
@@ -347,6 +348,7 @@ def schedule_general_reminders(main_loop):
         hour, minute = map(int, time_str.split(":"))
 
         if send_all:
+            print("[DEBUG][general loop] ВІДПРАВКА ВСЬОМУ ШТАТУ!")
             ids_func = get_all_staff_user_ids
         elif send_shift:
             ids_func = get_today_users

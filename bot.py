@@ -30,10 +30,13 @@ TEMPLATE_SHEET = 'Шаблони блоків'
 DAY_SHEET = 'Завдання на день'
 INFORMATION_BASE_SHEET = 'Інформаційна база'
 STAFF_SHEET = "Штат"
+GENERAL_REMINDERS_SHEET = 'Загальні нагадування'
 template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
 day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
 information_base_sheet = gs.open_by_key(SHEET_KEY).worksheet(INFORMATION_BASE_SHEET)
 staff_sheet = gs.open_by_key(SHEET_KEY).worksheet(STAFF_SHEET)
+general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
+
 
 # --- Telegram бот ---
 bot = Bot(token=BOT_TOKEN)

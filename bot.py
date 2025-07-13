@@ -266,8 +266,8 @@ def schedule_general_reminders():
         staff_records = staff_sheet.get_all_records()
         ids = []
         for r in staff_records:
-        uname = str(r.get("Username", "")).strip().lstrip('@').lower()
-        print(f"[DEBUG] Порівнюємо '{uname}' (таблиця) з '{username}' (вхід)")
+            uname = str(r.get("Username", "")).strip().lstrip('@').lower()
+            print(f"[DEBUG] Порівнюємо '{uname}' (таблиця) з '{username}' (вхід)")
         if uname == username and r.get("Telegram ID"):
             try:
                 ids.append(int(r["Telegram ID"]))

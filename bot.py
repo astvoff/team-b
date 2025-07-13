@@ -329,6 +329,7 @@ async def send_general_reminder(text, ids):
             print(f"[ERROR] Cannot send to user {user_id}: {e}")
 
 def schedule_general_reminders():
+    print("[DEBUG] schedule_general_reminders() called!")
     rows = general_reminders_sheet.get_all_records()
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
@@ -367,6 +368,7 @@ def schedule_general_reminders():
             continue
 
         async def job(text=text, ids_func=ids_func):
+            print("[DEBUG][JOB TRIGGERED]", text, usernames)
             ids = ids_func()
             print(f"[DEBUG][GENERAL REMINDER] Text: {text} IDs: {ids}")
             print(f"[GENERAL REMINDER] To: {ids} | Text: '{text}'\n")

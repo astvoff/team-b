@@ -306,12 +306,13 @@ def get_staff_user_ids_by_usernames(usernames):
     ids = []
     for r in staff_records:
         uname = str(r.get("Username", "")).strip().lower()
-        print(f"[DEBUG][get_staff_user_ids_by_usernames] checking row: username={uname}, telegram_id={r.get('Telegram ID')}")
+        print("[DEBUG][get_staff_user_ids_by_usernames] checking row: username={}, telegram_id={}".format(uname, r.get("Telegram ID", "")))
         if uname in username_set and r.get("Telegram ID"):
             try:
                 ids.append(int(r["Telegram ID"]))
             except Exception as e:
-                print("[DEBUG][get_staff_user_ids_by_usernames] Error parsing Telegram ID:", e)
+                print("[DEBUG][get_staff_user_ids_by_usernames] Cannot parse Telegram ID:", r["Telegram ID"], e)
+                continue
     print("[DEBUG][get_staff_user_ids_by_usernames] Result IDs:", ids)
     return ids
 

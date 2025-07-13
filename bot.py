@@ -286,7 +286,7 @@ def get_all_staff_user_ids():
     print(f"[DEBUG][get_all_staff_user_ids] Result IDs: {ids}")
     return ids
 
-def schedule_general_reminders():
+def schedule_general_reminders(main_loop):
     rows = general_reminders_sheet.get_all_records()
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
@@ -306,7 +306,7 @@ def schedule_general_reminders():
     import asyncio
     main_loop = asyncio.get_event_loop()
 
-    def run_async_job(text, ids_func):
+ def run_async_job(text, ids_func):
         asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids_func()), main_loop)
 
     for row in rows:
@@ -481,7 +481,6 @@ async def universal_back(message: types.Message, state: FSMContext):
 
 # --- Запуск ---
 async def main():
-    loop = asyncio.get_running_loop()
     schedule_general_reminders(loop)
     scheduler.start()
     await dp.start_polling(bot)

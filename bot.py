@@ -227,6 +227,7 @@ def schedule_reminders_for_user(user_id, tasks):
             )
 
 def schedule_general_reminders():
+    print("schedule_general_reminders CALLED")
     rows = general_reminders_sheet.get_all_records()
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
@@ -275,6 +276,7 @@ def schedule_general_reminders():
         for user_id in ids:
             try:
                 await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
+                print(f"[SENT] To {user_id}: {text}")
             except Exception as e:
                 print(f"[ERROR] Cannot send to user {user_id}: {e}")
 
@@ -306,8 +308,12 @@ def schedule_general_reminders():
             continue
 
         async def job(text=text, ids_func=ids_func):
-            ids = ids_func()
-            await send_general_reminder(text, ids)
+            try:
+                ids = ids_func()
+                await send_general_reminder(text, ids)
+                print(f"GENERAL REMINDER job RUN: {text}, ids={ids}")
+            except Exception as e:
+                print(f"[ERROR in job]: {e}")
 
         scheduler.add_job(
             job,
@@ -318,7 +324,8 @@ def schedule_general_reminders():
             id=f"general-{day}-{hour}-{minute}-{username or 'all'}",
             replace_existing=True
         )
-    
+        print("Added job", f"general-{day}-{hour}-{minute}-{username or 'all'}")
+        
 # === FSM для створення особистого нагадування ===
 class PersonalReminderState(StatesGroup):
     wait_text = State()

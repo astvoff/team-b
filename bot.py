@@ -265,7 +265,7 @@ def schedule_general_reminders():
         print(f"[DEBUG] Шукаємо username: '{username}'")
         staff_records = staff_sheet.get_all_records()
         ids = []
-    for r in staff_records:
+        for r in staff_records:
         uname = str(r.get("Username", "")).strip().lstrip('@').lower()
         print(f"[DEBUG] Порівнюємо '{uname}' (таблиця) з '{username}' (вхід)")
         if uname == username and r.get("Telegram ID"):
@@ -273,8 +273,8 @@ def schedule_general_reminders():
                 ids.append(int(r["Telegram ID"]))
             except Exception as e:
                 print(f"Error parsing ID: {e}")
-    print(f"[DEBUG] Знайдені ID: {ids}")
-    return ids
+        print(f"[DEBUG] Знайдені ID: {ids}")
+        return ids
 
 # Тест (встав після функції або в main):
 print("=== ТЕСТ get_staff_user_ids_by_username('aist_st') ===", get_staff_user_ids_by_username('aist_st'))

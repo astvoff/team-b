@@ -318,7 +318,8 @@ def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
-        "четвер": 3, "пʼятниця": 4, "субота": 5, "неділя": 6
+        "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
+        "субота": 5, "неділя": 6
     }
     for row in rows:
         day = row.get('День', '').strip().lower()
@@ -338,7 +339,6 @@ def schedule_general_reminders():
         except Exception:
             continue
 
-        # --- Формуємо список унікальних отримувачів ---
         def ids_func():
             ids = set()
             if send_all:
@@ -356,8 +356,15 @@ def schedule_general_reminders():
                 print("[WARNING] No recipients for reminder!")
             await send_general_reminder(text, ids)
 
+        def run_async_job():
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.get_event_loop()
+            loop.create_task(job())
+
         scheduler.add_job(
-            job,
+            run_async_job,
             'cron',
             day_of_week=weekday_num,
             hour=hour,
@@ -498,6 +505,7 @@ async def universal_back(message: types.Message, state: FSMContext):
 
 # --- Запуск ---
 async def main():
+    schedule_general_reminders()
     scheduler.start()
     await dp.start_polling(bot)
 

@@ -30,12 +30,13 @@ TEMPLATE_SHEET = 'Шаблони блоків'
 DAY_SHEET = 'Завдання на день'
 INFORMATION_BASE_SHEET = 'Інформаційна база'
 STAFF_SHEET = "Штат"
-GENERAL_REMINDERS_SHEET = "Загальні нагадування"
+GENERAL_REMINDERS_SHEET = 'Загальні нагадування'
 template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
 day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
 information_base_sheet = gs.open_by_key(SHEET_KEY).worksheet(INFORMATION_BASE_SHEET)
 staff_sheet = gs.open_by_key(SHEET_KEY).worksheet(STAFF_SHEET)
 general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
+
 
 # --- Telegram бот ---
 bot = Bot(token=BOT_TOKEN)
@@ -187,100 +188,45 @@ async def notify_admin_if_needed(user_id, row, task, reminder, block):
                 parse_mode="HTML"
             )
 
-def schedule_general_reminders():
-    rows = general_reminders_sheet.get_all_records()
-    days_map = {
-        "понеділок": 0, "вівторок": 1, "середа": 2,
-        "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
-        "субота": 5, "неділя": 6
-    }
-
-    def get_all_staff_user_ids():
-        staff_records = staff_sheet.get_all_records()
-        ids = []
-        for r in staff_records:
+def schedule_reminders_for_user(user_id, tasks):
+    for t in tasks:
+        if not t["time"]:
+            continue
+        times = [tm.strip() for tm in t["time"].split(",") if tm.strip()]
+        for time_str in times:
             try:
-                user_id = int(str(r.get("Telegram ID", "")).strip())
-                if user_id:
-                    ids.append(user_id)
+                remind_time = datetime.strptime(f"{get_today()} {time_str}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
             except Exception:
                 continue
-        return ids
+            now = now_ua()
+            if remind_time <= now:
+                continue
+            block = t.get("block") or t.get("Блок") or "?"
+            scheduler.add_job(
+                send_reminder,
+                'date',
+                run_date=remind_time,
+                args=[user_id, t["task"], t["reminder"], t["row"]],
+                id=f"{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
+                replace_existing=True
+            )
+            scheduler.add_job(
+                repeat_reminder_if_needed,
+                'date',
+                run_date=remind_time + timedelta(minutes=REMINDER_REPEAT_MINUTES),
+                args=[user_id, t["row"], t["task"], t["reminder"], block],
+                id=f"repeat-{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
+                replace_existing=True
+            )
+            scheduler.add_job(
+                notify_admin_if_needed,
+                'date',
+                run_date=remind_time + timedelta(minutes=ADMIN_NOTIFY_MINUTES),
+                args=[user_id, t["row"], t["task"], t["reminder"], block],
+                id=f"admin-{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
+                replace_existing=True
+            )
 
-    def get_today_users():
-        today = get_today()
-        records = day_sheet.get_all_records()
-        user_ids = set()
-        for row in records:
-            if str(row.get("Дата")) == today and row.get("Telegram ID"):
-                try:
-                    user_ids.add(int(row["Telegram ID"]))
-                except Exception:
-                    continue
-        return list(user_ids)
-
-    def get_staff_user_ids_by_username(username):
-        username = str(username).strip().lstrip('@').lower()
-        staff_records = staff_sheet.get_all_records()
-        ids = []
-        for r in staff_records:
-            uname = str(r.get("Username", "")).strip().lstrip('@').lower()
-            if uname == username and r.get("Telegram ID"):
-                try:
-                    ids.append(int(r["Telegram ID"]))
-                except Exception:
-                    continue
-        return ids
-
-    async def send_general_reminder(text, ids):
-        for user_id in ids:
-            try:
-                await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
-            except Exception as e:
-                print(f"[ERROR] Cannot send to user {user_id}: {e}")
-
-    for row in rows:
-        day = str(row.get('День', '')).strip().lower()
-        time_str = str(row.get('Час', '')).strip()
-        text = str(row.get('Текст', '')).strip()
-        send_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
-        send_shift = str(row.get('Розсилка, хто на зміні', '')).strip().upper() == "TRUE"
-        send_individual = str(row.get('Індивідуальна розсилка', '')).strip().upper() == "TRUE"
-        username = str(row.get('Username', '')).strip()
-
-        if not day or not time_str or not text or not (send_all or send_shift or send_individual):
-            continue
-
-        weekday_num = days_map.get(day)
-        if weekday_num is None:
-            continue
-
-        hour, minute = map(int, time_str.split(":"))
-
-        if send_all:
-            ids_func = get_all_staff_user_ids
-        elif send_shift:
-            ids_func = get_today_users
-        elif send_individual and username:
-            ids_func = lambda username=username: get_staff_user_ids_by_username(username)
-        else:
-            continue
-
-        # Головна зміна: job – звичайна функція, всередині якої запускається асинхронна задача
-        def job(text=text, ids_func=ids_func):
-            ids = ids_func()
-            asyncio.create_task(send_general_reminder(text, ids))
-
-        scheduler.add_job(
-            job,
-            'cron',
-            day_of_week=weekday_num,
-            hour=hour,
-            minute=minute,
-            id=f"general-{day}-{hour}-{minute}-{username or 'all'}",
-            replace_existing=True
-        )
-        
 # === FSM для створення особистого нагадування ===
 class PersonalReminderState(StatesGroup):
     wait_text = State()
@@ -324,6 +270,111 @@ async def reminder_got_time(message: types.Message, state: FSMContext):
     )
     await message.answer(f"Нагадування створено на {time_str}!\n\nТекст: {text}", reply_markup=user_menu)
     await state.clear()
+
+# --- Загальні нагадування (розсилка) ---
+
+def get_all_staff_user_ids():
+    """ID усіх співробітників з листа 'Штат'."""
+    ids = []
+    for r in staff_sheet.get_all_records():
+        try:
+            user_id = int(r.get("Telegram ID", 0))
+            if user_id:
+                ids.append(user_id)
+        except Exception:
+            continue
+    return ids
+
+def get_today_users():
+    """ID тих, хто обрав блок сьогодні (з аркуша 'Завдання на день')."""
+    today = get_today()
+    user_ids = set()
+    for row in day_sheet.get_all_records():
+        if str(row.get("Дата")) == today and row.get("Telegram ID"):
+            try:
+                user_ids.add(int(row["Telegram ID"]))
+            except Exception:
+                continue
+    return list(user_ids)
+
+def get_staff_user_ids_by_usernames(usernames):
+    """ID за списком Username (через кому, без @)."""
+    username_set = set(u.strip().lower() for u in usernames.split(",") if u.strip())
+    ids = []
+    for r in staff_sheet.get_all_records():
+        uname = str(r.get("Username", "")).strip().lower()
+        if uname in username_set and r.get("Telegram ID"):
+            try:
+                ids.append(int(r["Telegram ID"]))
+            except Exception:
+                continue
+    return ids
+
+async def send_general_reminder(text, ids):
+    for user_id in ids:
+        try:
+            await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
+        except Exception as e:
+            logging.warning(f"Cannot send to user {user_id}: {e}")
+
+def schedule_general_reminders():
+    rows = general_reminders_sheet.get_all_records()
+    days_map = {
+        "понеділок": 0, "вівторок": 1, "середа": 2,
+        "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
+        "субота": 5, "неділя": 6
+    }
+    for row in rows:
+        day = row.get('День', '').strip().lower()
+        time_str = row.get('Час', '').strip()
+        text = row.get('Текст', '').strip()
+        send_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
+        send_shift = str(row.get('Розсилка, хто на зміні', '')).strip().upper() == "TRUE"
+        send_personal = str(row.get('Індивідуальна розсилка', '')).strip().upper() == "TRUE"
+        usernames = str(row.get('Username', '')).strip()
+        if not day or not time_str or not text:
+            continue
+        weekday_num = days_map.get(day)
+        if weekday_num is None:
+            continue
+        try:
+            hour, minute = map(int, time_str.split(":"))
+        except Exception:
+            continue
+
+        def ids_func():
+            ids = set()
+            if send_all:
+                ids.update(get_all_staff_user_ids())
+            if send_shift:
+                ids.update(get_today_users())
+            if send_personal and usernames:
+                ids.update(get_staff_user_ids_by_usernames(usernames))
+            return list(ids)
+
+        async def job(text=text, ids_func=ids_func):
+            ids = ids_func()
+            print(f"[DEBUG][GENERAL REMINDER] Text: {text}\nIDs: {ids}")
+            if not ids:
+                print("[WARNING] No recipients for reminder!")
+            await send_general_reminder(text, ids)
+
+        def run_async_job():
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.get_event_loop()
+            loop.create_task(job())
+
+        scheduler.add_job(
+            run_async_job,
+            'cron',
+            day_of_week=weekday_num,
+            hour=hour,
+            minute=minute,
+            id=f"general-{day}-{hour}-{minute}",
+            replace_existing=True
+        )
 
 # --- Навігаційне меню користувача ---
 @dp.message(CommandStart())

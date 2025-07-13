@@ -253,6 +253,63 @@ class PersonalReminderState(StatesGroup):
     wait_text = State()
     wait_time = State()
 
+# --- Загальні нагадування ---
+
+def get_today_users():
+    """
+    Повертає список Telegram ID тих, хто обрав блок сьогодні (з аркуша 'Завдання на день').
+    """
+    today = get_today()
+    records = day_sheet.get_all_records()
+    user_ids = set()
+    for row in records:
+        if str(row.get("Дата")) == today and row.get("Telegram ID"):
+            try:
+                user_ids.add(int(row["Telegram ID"]))
+            except Exception:
+                continue
+    return list(user_ids)
+
+def get_all_staff_user_ids():
+    """
+    Повертає список Telegram ID усіх співробітників з листа 'Штат'.
+    """
+    staff_records = staff_sheet.get_all_records()
+    ids = []
+    for r in staff_records:
+        try:
+            user_id = int(r.get("Telegram ID", 0))
+            if user_id:
+                ids.append(user_id)
+        except Exception:
+            continue
+    return ids
+
+def get_staff_user_ids_by_usernames(usernames):
+    """
+    Повертає Telegram ID співробітників за списком юзернеймів (через кому, без @).
+    """
+    staff_records = staff_sheet.get_all_records()
+    username_set = set([u.strip().lower() for u in usernames.split(",") if u.strip()])
+    ids = []
+    for r in staff_records:
+        uname = str(r.get("Username", "")).strip().lower()
+        if uname in username_set and r.get("Telegram ID"):
+            try:
+                ids.append(int(r["Telegram ID"]))
+            except Exception:
+                continue
+    return ids
+
+async def send_general_reminder(text, ids):
+    print("send_general_reminder called:", text, ids)
+    for user_id in ids:
+        try:
+            print(f"Sending to {user_id}")
+            await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
+        except Exception as e:
+            logging.warning(f"Cannot send to user {user_id}: {e}")
+
 def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()
     days_map = {
@@ -273,6 +330,7 @@ def schedule_general_reminders():
             continue
         hour, minute = map(int, time_str.split(":"))
 
+        # --- Визначаємо ids_func згідно логіки:
         if send_to_all:
             ids_func = get_all_staff_user_ids
         elif usernames:
@@ -285,19 +343,10 @@ def schedule_general_reminders():
             print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
             await send_general_reminder(text, ids)
 
-        # --- Ось ця функція 100% працює у будь-якому середовищі ---
+        # --- Додаємо job як async через run_async_job
         def run_async_job():
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            if loop and loop.is_running():
-                asyncio.ensure_future(send_general_reminder_job())
-            else:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                new_loop.run_until_complete(send_general_reminder_job())
-                new_loop.close()
+            loop = asyncio.get_running_loop()
+            loop.create_task(send_general_reminder_job())
 
         scheduler.add_job(
             run_async_job,

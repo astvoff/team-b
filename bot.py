@@ -329,8 +329,13 @@ async def send_general_reminder(text, ids):
             print(f"[ERROR] Cannot send to user {user_id}: {e}")
 
 def schedule_general_reminders():
-    print("[DEBUG] Загальні нагадування, перший рядок:", rows[0])
+    print("[DEBUG] schedule_general_reminders() called!")
     rows = general_reminders_sheet.get_all_records()
+    print("[DEBUG] Загальні нагадування — всі рядки:", rows)
+    if not rows:
+        print("[DEBUG] Лист 'Загальні нагадування' порожній!")
+        return  # Додаємо перевірку!
+    print("[DEBUG] Загальні нагадування, перший рядок:", rows[0])
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
         "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,

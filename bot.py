@@ -273,19 +273,17 @@ async def reminder_got_time(message: types.Message, state: FSMContext):
     await state.clear()
 
 def get_all_staff_user_ids():
+    ids = []
     staff_records = staff_sheet.get_all_records()
     print("[DEBUG][get_all_staff_user_ids] staff_records:", staff_records)
-    ids = []
-    for idx, r in enumerate(staff_records):
-        raw_id = r.get("Telegram ID", "")
-        print(f"[DEBUG][get_all_staff_user_ids] Row {idx}: Telegram ID raw value: '{raw_id}'")
+    for i, r in enumerate(staff_records):
+        print(f"[DEBUG][get_all_staff_user_ids] Row {i}: Telegram ID raw value: {repr(r.get('Telegram ID', ''))}")
         try:
-            user_id = int(str(raw_id).strip())
-            print(f"[DEBUG][get_all_staff_user_ids] Parsed Telegram ID: {user_id}")
+            user_id = int(str(r.get("Telegram ID", "")).strip())
             if user_id:
                 ids.append(user_id)
         except Exception as e:
-            print(f"[DEBUG][get_all_staff_user_ids] Cannot parse Telegram ID: '{raw_id}', error: {e}")
+            print(f"[DEBUG][get_all_staff_user_ids] Cannot parse: {r.get('Telegram ID')} — {e}")
             continue
     print("[DEBUG][get_all_staff_user_ids] Final IDs:", ids)
     return ids
@@ -339,6 +337,7 @@ def schedule_general_reminders():
         asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids_func()), main_loop)
     
     for row in rows:
+        print("[DEBUG][general loop] row:", row)  # додай це
         day = str(row.get('День', '')).strip().lower()
         time_str = str(row.get('Час', '')).strip()
         text = str(row.get('Текст', '')).strip()

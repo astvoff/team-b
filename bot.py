@@ -550,8 +550,8 @@ async def main():
     await dp.start_polling(bot)
 
 async def main():
-    scheduler.start()
     schedule_general_reminders()
+    scheduler.start()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

@@ -260,11 +260,11 @@ def schedule_general_reminders():
         return list(user_ids)
 
     def get_staff_user_ids_by_username(username):
-    # Видаляємо пробіли, @, приводимо до нижнього регістру
-    username = str(username).strip().lstrip('@').lower()
-    print(f"[DEBUG] Шукаємо username: '{username}'")
-    staff_records = staff_sheet.get_all_records()
-    ids = []
+        # Видаляємо пробіли, @, приводимо до нижнього регістру
+        username = str(username).strip().lstrip('@').lower()
+        print(f"[DEBUG] Шукаємо username: '{username}'")
+        staff_records = staff_sheet.get_all_records()
+        ids = []
     for r in staff_records:
         uname = str(r.get("Username", "")).strip().lstrip('@').lower()
         print(f"[DEBUG] Порівнюємо '{uname}' (таблиця) з '{username}' (вхід)")

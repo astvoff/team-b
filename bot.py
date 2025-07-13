@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+import functools
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
@@ -310,13 +311,6 @@ async def send_general_reminder(text, ids):
             await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
         except Exception as e:
             logging.warning(f"Cannot send to user {user_id}: {e}")
-
-import asyncio
-from functools import partial
-
-import functools
-
-import functools
 
 def schedule_general_reminders():
     print(">>> RUNNING schedule_general_reminders")

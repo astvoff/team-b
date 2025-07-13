@@ -273,11 +273,11 @@ async def reminder_got_time(message: types.Message, state: FSMContext):
     await state.clear()
 
 def get_all_staff_user_ids():
+    # --- ID усіх співробітників з листа 'Штат' ---
     ids = []
     for r in staff_sheet.get_all_records():
         try:
             user_id = int(str(r.get("Telegram ID", "")).strip())
-            print(f"[DEBUG][get_all_staff_user_ids] row: {r} | user_id: {user_id}")
             if user_id:
                 ids.append(user_id)
         except Exception as e:
@@ -286,6 +286,7 @@ def get_all_staff_user_ids():
     return ids
 
 def get_today_users():
+    # --- ID тих, хто обрав блок сьогодні (з аркуша 'Завдання на день') ---
     today = get_today()
     user_ids = set()
     for row in day_sheet.get_all_records():
@@ -298,6 +299,7 @@ def get_today_users():
     return list(user_ids)
 
 def get_staff_user_ids_by_username(username):
+    # --- ID за username (без @) ---
     username = str(username).strip().lstrip('@').lower()
     print(f"[DEBUG][Username search] шукаємо username='{username}'")
     ids = []
@@ -305,9 +307,9 @@ def get_staff_user_ids_by_username(username):
         uname = str(r.get("Username", "")).strip().lstrip('@').lower()
         print(f"[DEBUG][Username row] {uname}")
         if uname == username and r.get("Telegram ID"):
+            print(f"[DEBUG][MATCH] {uname} == {username} -> {r['Telegram ID']}")
             try:
                 ids.append(int(r["Telegram ID"]))
-                print(f"[DEBUG][MATCH] {uname} == {username} -> {r['Telegram ID']}")
             except Exception as e:
                 print(f"[DEBUG][get_staff_user_ids_by_username] Exception: {e}")
     print(f"[DEBUG][get_staff_user_ids_by_username] Result IDs: {ids}")
@@ -320,15 +322,18 @@ async def send_general_reminder(text, ids):
             print(f"[DEBUG][send_general_reminder] Надсилаємо {user_id}")
             await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
         except Exception as e:
-            print(f"[ERROR][send_general_reminder] Cannot send to user {user_id}: {e}")
+            print(f"[ERROR][send_general_reminder] Cannot send to {user_id}: {e}")
 
-def schedule_general_reminders(main_loop):
+def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
         "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
         "субота": 5, "неділя": 6
     }
+
+    import asyncio
+    main_loop = asyncio.get_event_loop()
 
     def run_async_job(text, ids_func):
         asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids_func()), main_loop)
@@ -345,18 +350,19 @@ def schedule_general_reminders(main_loop):
 
         if not day or not time_str or not text or not (send_all or send_shift or send_individual):
             continue
+
         weekday_num = days_map.get(day)
         if weekday_num is None:
             continue
+
         hour, minute = map(int, time_str.split(":"))
 
-        # Режими розсилки
         if send_all:
             ids_func = get_all_staff_user_ids
         elif send_shift:
             ids_func = get_today_users
         elif send_individual and username:
-            _username = username
+            _username = username  # потрібен для lambda
             ids_func = lambda _username=_username: get_staff_user_ids_by_username(_username)
         else:
             continue
@@ -504,8 +510,7 @@ async def universal_back(message: types.Message, state: FSMContext):
 
 # --- Запуск ---
 async def main():
-    loop = asyncio.get_running_loop()
-    schedule_general_reminders(loop)
+    schedule_general_reminders()
     scheduler.start()
     await dp.start_polling(bot)
 

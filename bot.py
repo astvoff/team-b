@@ -271,8 +271,6 @@ async def reminder_got_time(message: types.Message, state: FSMContext):
     await message.answer(f"Нагадування створено на {time_str}!\n\nТекст: {text}", reply_markup=user_menu)
     await state.clear()
 
-# --- Загальні нагадування (розсилка) ---
-
 def get_all_staff_user_ids():
     """ID усіх співробітників з листа 'Штат'."""
     ids = []
@@ -297,13 +295,13 @@ def get_today_users():
                 continue
     return list(user_ids)
 
-def get_staff_user_ids_by_usernames(usernames):
-    """ID за списком Username (через кому, без @)."""
-    username_set = set(u.strip().lower() for u in usernames.split(",") if u.strip())
+def get_staff_user_ids_by_username(username):
+    """ID за Username (без @, регістр не важливий)."""
+    username = str(username).strip().lstrip('@').lower()
     ids = []
     for r in staff_sheet.get_all_records():
-        uname = str(r.get("Username", "")).strip().lower()
-        if uname in username_set and r.get("Telegram ID"):
+        uname = str(r.get("Username", "")).strip().lstrip('@').lower()
+        if uname == username and r.get("Telegram ID"):
             try:
                 ids.append(int(r["Telegram ID"]))
             except Exception:
@@ -324,22 +322,12 @@ def schedule_general_reminders():
         "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
         "субота": 5, "неділя": 6
     }
-    # ... твої функції get_all_staff_user_ids(), get_today_users(), get_staff_user_ids_by_username()
 
-    async def send_general_reminder(text, ids):
-        for user_id in ids:
-            try:
-                await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
-            except Exception as e:
-                print(f"[ERROR] Cannot send to user {user_id}: {e}")
-
-    # Асинхронний запуск job
     def run_async_job(text, ids_func):
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = asyncio.get_event_loop()
-        # ВАЖЛИВО: run job у головному лупі!
         asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids_func()), loop)
 
     for row in rows:
@@ -351,8 +339,9 @@ def schedule_general_reminders():
         send_individual = str(row.get('Індивідуальна розсилка', '')).strip().upper() == "TRUE"
         username = str(row.get('Username', '')).strip()
 
-    if not day or not time_str or not text or not (send_all or send_shift or send_individual):
-        continue
+        if not day or not time_str or not text or not (send_all or send_shift or send_individual):
+            continue
+
         weekday_num = days_map.get(day)
         if weekday_num is None:
             continue

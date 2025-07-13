@@ -336,6 +336,13 @@ def schedule_general_reminders():
         "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
         "субота": 5, "неділя": 6
     }
+    rows = general_reminders_sheet.get_all_records()
+print("[DEBUG] Загальні нагадування — всі рядки:", rows)
+if not rows:
+    print("[DEBUG] Лист 'Загальні нагадування' порожній!")
+    return  # або break/continue — залежно від місця в коді
+print("[DEBUG] Загальні нагадування, перший рядок:", rows[0])
+
     for row in rows:
         day = str(row.get('День', '')).strip().lower()
         time_str = str(row.get('Час', '')).strip()

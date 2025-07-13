@@ -330,7 +330,6 @@ def schedule_general_reminders():
             continue
         hour, minute = map(int, time_str.split(":"))
 
-        # --- Визначаємо ids_func згідно логіки:
         if send_to_all:
             ids_func = get_all_staff_user_ids
         elif usernames:
@@ -338,18 +337,19 @@ def schedule_general_reminders():
         else:
             ids_func = get_today_users
 
-        async def send_general_reminder_job(text=text, ids_func=ids_func):
+        async def job():
             ids = ids_func()
-            print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
             await send_general_reminder(text, ids)
 
-        # --- Додаємо job як async через run_async_job
-        def run_async_job():
-            loop = asyncio.get_running_loop()
-            loop.create_task(send_general_reminder_job())
+        def sync_job():
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(job())
+            else:
+                asyncio.run(job())
 
         scheduler.add_job(
-            run_async_job,
+            sync_job,
             'cron',
             day_of_week=weekday_num,
             hour=hour,

@@ -276,21 +276,20 @@ def get_all_staff_user_ids():
     staff_records = staff_sheet.get_all_records()
     print("[DEBUG][get_all_staff_user_ids] staff_records:", staff_records)
     ids = []
-    for i, r in enumerate(staff_records):
+    for idx, r in enumerate(staff_records):
         raw_id = r.get("Telegram ID", "")
-        print(f"[DEBUG][get_all_staff_user_ids] Row {i}: Telegram ID raw value: '{raw_id}'")
+        print(f"[DEBUG][get_all_staff_user_ids] Row {idx}: Telegram ID raw value: '{raw_id}'")
         try:
             user_id = int(str(raw_id).strip())
+            print(f"[DEBUG][get_all_staff_user_ids] Parsed Telegram ID: {user_id}")
             if user_id:
                 ids.append(user_id)
-                print(f"[DEBUG][get_all_staff_user_ids] Parsed Telegram ID: {user_id}")
-            else:
-                print(f"[DEBUG][get_all_staff_user_ids] Empty Telegram ID for row {i}")
         except Exception as e:
-            print(f"[DEBUG][get_all_staff_user_ids] Cannot parse Telegram ID for row {i}: '{raw_id}', {e}")
+            print(f"[DEBUG][get_all_staff_user_ids] Cannot parse Telegram ID: '{raw_id}', error: {e}")
+            continue
     print("[DEBUG][get_all_staff_user_ids] Final IDs:", ids)
     return ids
-
+    
 def get_today_users():
     """ID тих, хто обрав блок сьогодні (з аркуша 'Завдання на день')."""
     today = get_today()

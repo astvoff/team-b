@@ -274,17 +274,19 @@ async def reminder_got_time(message: types.Message, state: FSMContext):
 
 def get_all_staff_user_ids():
     ids = []
-    for r in staff_sheet.get_all_records():
-        print("[DEBUG][all_staff] row:", r)
+    staff_records = staff_sheet.get_all_records()
+    print("[DEBUG][get_all_staff_user_ids] staff_records:", staff_records)
+    for r in staff_records:
+        raw_id = r.get("Telegram ID", "")
+        print(f"[DEBUG][get_all_staff_user_ids] raw_id: '{raw_id}', row: {r}")
         try:
-            user_id = int(str(r.get("Telegram ID", "")).strip())
+            user_id = int(str(raw_id).strip())
             if user_id:
                 ids.append(user_id)
-                print(f"[DEBUG][all_staff] found user_id: {user_id}")
+                print(f"[DEBUG][get_all_staff_user_ids] Додаємо ID: {user_id}")
         except Exception as e:
-            print(f"[DEBUG][all_staff] error: {e}")
-            continue
-    print("[DEBUG][all_staff] all ids:", ids)
+            print(f"[DEBUG][get_all_staff_user_ids] ERROR: {e} для значення {raw_id}")
+    print("[DEBUG][get_all_staff_user_ids] IDs:", ids)
     return ids
     
 def get_today_users():
@@ -317,13 +319,13 @@ def get_staff_user_ids_by_username(username):
     return ids
 
 async def send_general_reminder(text, ids):
-    print("[DEBUG][SEND GENERAL] ids to send:", ids)
+    print(f"[DEBUG][send_general_reminder] IDs для розсилки: {ids}")
     for user_id in ids:
         try:
+            print(f"[DEBUG][send_general_reminder] Надсилаємо {user_id}")
             await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
-            print(f"[DEBUG][SEND GENERAL] sent to {user_id}")
         except Exception as e:
-            print(f"[ERROR] Cannot send to user {user_id}: {e}")
+            print(f"[ERROR][send_general_reminder] {user_id}: {e}")
 
 def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()

@@ -286,7 +286,7 @@ def get_all_staff_user_ids():
     print(f"[DEBUG][get_all_staff_user_ids] Result IDs: {ids}")
     return ids
 
-def schedule_general_reminders():
+def schedule_general_reminders(loop)():
     rows = general_reminders_sheet.get_all_records()
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,

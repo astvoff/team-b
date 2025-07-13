@@ -319,6 +319,7 @@ def schedule_general_reminders():
         "четвер": 3, "пʼятниця": 4, "субота": 5, "неділя": 6,
         "пятниця": 4, "п’ятниця": 4
     }
+    loop = asyncio.get_event_loop()  # <-- отримуємо loop один раз (у main-потоку)
     for row in rows:
         day = row.get('День', '').strip().lower()
         time_str = row.get('Час', '').strip()
@@ -341,19 +342,12 @@ def schedule_general_reminders():
             ids_func = get_today_users
 
         async def job(text=text, ids_func=ids_func):
-            try:
-                ids = ids_func()
-                print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
-                await send_general_reminder(text, ids)
-            except Exception as e:
-                print(f"!!! ERROR in GENERAL REMINDER JOB: {e}")
-                import traceback
-                traceback.print_exc()
+            ids = ids_func()
+            print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
+            await send_general_reminder(text, ids)
 
         def run_async_job():
-            import asyncio
-            loop = asyncio.get_event_loop()
-            loop.create_task(job())
+            asyncio.run_coroutine_threadsafe(job(), loop)  # <-- тут використовуємо loop
 
         scheduler.add_job(
             run_async_job,

@@ -34,10 +34,12 @@ TEMPLATE_SHEET = 'Шаблони блоків'
 DAY_SHEET = 'Завдання на день'
 GENERAL_REMINDERS_SHEET = 'Загальні нагадування'
 INFORMATION_BASE_SHEET = 'Інформаційна база'
+STAFF_SHEET = "Штат"
 template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
 day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
 information_base_sheet = gs.open_by_key(SHEET_KEY).worksheet(INFORMATION_BASE_SHEET)
 general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
+staff_sheet = gs.open_by_key(SHEET_KEY).worksheet(STAFF_SHEET)
 
 
 
@@ -270,25 +272,27 @@ async def send_general_reminder(text):
         except Exception as e:
             logging.warning(f"Cannot send to user {user_id}: {e}")
             
-def schedule_general_reminders():
+def ():
     rows = general_reminders_sheet.get_all_records()
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
-        "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
+        "четвер": 3, "пʼятниця": 4, "пятниця": 4, "п’ятниця": 4,
         "субота": 5, "неділя": 6
     }
     for row in rows:
-        day = row.get('День', '').strip().lower()
-        time_str = row.get('Час', '').strip()
-        text = row.get('Текст', '').strip()
+        day = str(row.get('День', '')).strip().lower()
+        time_str = str(row.get('Час', '')).strip()
+        text = str(row.get('Текст', '')).strip()
+        send_to_staff = str(row.get('Загальна розсилка', '')).strip().lower() == "true"
         if not day or not time_str or not text:
             continue
         weekday_num = days_map.get(day)
         if weekday_num is None:
             continue
         hour, minute = map(int, time_str.split(":"))
+        func = send_general_reminder_by_staff if send_to_staff else send_general_reminder
         scheduler.add_job(
-            send_general_reminder,
+            func,
             'cron',
             day_of_week=weekday_num,
             hour=hour,
@@ -297,6 +301,38 @@ def schedule_general_reminders():
             id=f"general-{day}-{hour}-{minute}",
             replace_existing=True
         )
+
+def get_all_staff_contacts():
+    """Повертає список контактів з листа 'Штат'"""
+    records = staff_sheet.get_all_records()
+    contacts = []
+    for row in records:
+        tg_id = str(row.get("Telegram ID", "")).strip()
+        username = str(row.get("Telegram username", "")).strip()
+        if tg_id and tg_id != "None":
+            contacts.append({"id": int(tg_id)})
+        elif username:
+            contacts.append({"username": username})
+    return contacts
+
+async def send_general_reminder_by_staff(text):
+    contacts = get_all_staff_contacts()
+    for c in contacts:
+        try:
+            if "id" in c:
+                await bot.send_message(c["id"], f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
+            elif "username" in c:
+                await bot.send_message(f"@{c['username']}", f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
+        except Exception as e:
+            logging.warning(f"Cannot send to {c}: {e}")
+
+async def send_general_reminder(text):
+    for user_id in get_today_users():
+        try:
+            await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
+        except Exception as e:
+            logging.warning(f"Cannot send to user {user_id}: {e}")
+
 
 @dp.message(lambda msg: msg.text == "Створити нагадування")
 async def create_reminder_start(message: types.Message, state: FSMContext):
@@ -522,7 +558,7 @@ async def main():
     await dp.start_polling(bot)
 
 async def main():
-    schedule_general_reminders()
+    ()
     scheduler.start()
     await dp.start_polling(bot)
 

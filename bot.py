@@ -281,8 +281,10 @@ def get_today_users():
     return list(user_ids)
 
 async def send_general_reminder(text, ids):
+    print("send_general_reminder called:", text, ids)
     for user_id in ids:
         try:
+            print(f"Sending to {user_id}")
             await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
         except Exception as e:
             logging.warning(f"Cannot send to user {user_id}: {e}")
@@ -309,9 +311,10 @@ def schedule_general_reminders():
         # Обираємо функцію для отримання ID
         ids_func = get_all_staff_user_ids if send_to_all else get_today_users
 
-        async def job(text=text, ids_func=ids_func):
-            ids = ids_func()
-            await send_general_reminder(text, ids)
+async def job(text=text, ids_func=ids_func):
+    ids = ids_func()
+    print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
+    await send_general_reminder(text, ids)
 
         scheduler.add_job(
             job,

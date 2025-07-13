@@ -272,7 +272,7 @@ async def send_general_reminder(text):
         except Exception as e:
             logging.warning(f"Cannot send to user {user_id}: {e}")
             
-def ():
+def get_all_staff_contacts():
     rows = general_reminders_sheet.get_all_records()
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,

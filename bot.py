@@ -334,19 +334,14 @@ def schedule_general_reminders():
     print("[DEBUG] Загальні нагадування — всі рядки:", rows)
     if not rows:
         print("[DEBUG] Лист 'Загальні нагадування' порожній!")
-        return  # Додаємо перевірку!
+        return
     print("[DEBUG] Загальні нагадування, перший рядок:", rows[0])
+
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
         "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
         "субота": 5, "неділя": 6
     }
-    rows = general_reminders_sheet.get_all_records()
-print("[DEBUG] Загальні нагадування — всі рядки:", rows)
-if not rows:
-    print("[DEBUG] Лист 'Загальні нагадування' порожній!")
-    return  # або break/continue — залежно від місця в коді
-print("[DEBUG] Загальні нагадування, перший рядок:", rows[0])
 
     for row in rows:
         day = str(row.get('День', '')).strip().lower()
@@ -379,7 +374,7 @@ print("[DEBUG] Загальні нагадування, перший рядок:
             print("[DEBUG] skip row (no matching mode)\n")
             continue
 
-        async def job(text=text, ids_func=ids_func, usernames=usernames):
+        async def job(text=text, ids_func=ids_func):
             print("[DEBUG][JOB TRIGGERED]", text, usernames)
             ids = ids_func()
             print(f"[DEBUG][GENERAL REMINDER] Text: {text} IDs: {ids}")

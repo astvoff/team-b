@@ -340,10 +340,15 @@ def schedule_general_reminders():
         else:
             ids_func = get_today_users
 
-        async def job(text=text, ids_func=ids_func):
-            ids = ids_func()
-            print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
-            await send_general_reminder(text, ids)
+ async def job(text=text, ids_func=ids_func):
+    try:
+        ids = ids_func()
+        print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
+        await send_general_reminder(text, ids)
+    except Exception as e:
+        print(f"!!! ERROR in GENERAL REMINDER JOB: {e}")
+        import traceback
+        traceback.print_exc()
 
         def run_async_job():
             asyncio.get_running_loop().create_task(job())

@@ -324,47 +324,41 @@ def schedule_general_reminders():
         "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
         "субота": 5, "неділя": 6
     }
+    # ... твої функції get_all_staff_user_ids(), get_today_users(), get_staff_user_ids_by_username()
+
+    async def send_general_reminder(text, ids):
+        for user_id in ids:
+            try:
+                await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
+            except Exception as e:
+                print(f"[ERROR] Cannot send to user {user_id}: {e}")
+
+    # Асинхронний запуск job
+    def run_async_job(text, ids_func):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
+        # ВАЖЛИВО: run job у головному лупі!
+        asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids_func()), loop)
+
     for row in rows:
-        day = row.get('День', '').strip().lower()
-        time_str = row.get('Час', '').strip()
-        text = row.get('Текст', '').strip()
-        send_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
-        send_shift = str(row.get('Розсилка, хто на зміні', '')).strip().upper() == "TRUE"
-        send_personal = str(row.get('Індивідуальна розсилка', '')).strip().upper() == "TRUE"
-        usernames = str(row.get('Username', '')).strip()
-        if not day or not time_str or not text:
+        # ... (твоя логіка отримання параметрів)
+        if not day or not time_str or not text or not (send_all or send_shift or send_individual):
             continue
         weekday_num = days_map.get(day)
         if weekday_num is None:
             continue
-        try:
-            hour, minute = map(int, time_str.split(":"))
-        except Exception:
+        hour, minute = map(int, time_str.split(":"))
+
+        if send_all:
+            ids_func = get_all_staff_user_ids
+        elif send_shift:
+            ids_func = get_today_users
+        elif send_individual and username:
+            ids_func = lambda: get_staff_user_ids_by_username(username)
+        else:
             continue
-
-        def ids_func():
-            ids = set()
-            if send_all:
-                ids.update(get_all_staff_user_ids())
-            if send_shift:
-                ids.update(get_today_users())
-            if send_personal and usernames:
-                ids.update(get_staff_user_ids_by_usernames(usernames))
-            return list(ids)
-
-        async def job(text=text, ids_func=ids_func):
-            ids = ids_func()
-            print(f"[DEBUG][GENERAL REMINDER] Text: {text}\nIDs: {ids}")
-            if not ids:
-                print("[WARNING] No recipients for reminder!")
-            await send_general_reminder(text, ids)
-
-        def run_async_job():
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.get_event_loop()
-            loop.create_task(job())
 
         scheduler.add_job(
             run_async_job,
@@ -372,10 +366,11 @@ def schedule_general_reminders():
             day_of_week=weekday_num,
             hour=hour,
             minute=minute,
-            id=f"general-{day}-{hour}-{minute}",
+            args=[text, ids_func],
+            id=f"general-{day}-{hour}-{minute}-{username or 'all'}",
             replace_existing=True
         )
-
+        
 # --- Навігаційне меню користувача ---
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):

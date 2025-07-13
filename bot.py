@@ -253,25 +253,20 @@ class PersonalReminderState(StatesGroup):
     wait_text = State()
     wait_time = State()
 
-def get_today_users():
-    """Отримати Telegram ID тих, хто обрав блок сьогодні."""
-    today = get_today()
-    records = day_sheet.get_all_records()
-    user_ids = set()
+    # === Штат (staff) ===
+def get_all_staff_user_ids():
+    """Отримати всі Telegram ID зі 'Штат'."""
+    records = staff_sheet.get_all_records()
+    user_ids = []
     for row in records:
-        if str(row.get("Дата")) == today and row.get("Telegram ID"):
-            user_ids.add(int(row["Telegram ID"]))
-    return list(user_ids)
+        tid = row.get('Telegram ID')
+        if tid:
+            try:
+                user_ids.append(int(tid))
+            except Exception:
+                pass
+    return user_ids
 
-async def send_general_reminder(text):
-    print("=== send_general_reminder ===", text)
-    for user_id in get_today_users():
-        print(f"Try send to {user_id}")
-        try:
-            await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
-        except Exception as e:
-            logging.warning(f"Cannot send to user {user_id}: {e}")
-            
 def get_today_users():
     """Отримати Telegram ID тих, хто обрав блок сьогодні."""
     today = get_today()
@@ -309,13 +304,10 @@ def schedule_general_reminders():
         hour, minute = map(int, time_str.split(":"))
 
         # Обираємо, кому розсилати: всім зі “Штат” чи тим, хто обрав блок
-        if send_to_all:
-            get_ids = get_all_staff_user_ids
-        else:
-            get_ids = get_today_users
+        get_ids = get_all_staff_user_ids if send_to_all else get_today_users
 
         scheduler.add_job(
-            lambda t=text, get_ids=get_ids: send_general_reminder(t, get_ids()),
+            lambda t=text, get_ids=get_ids: asyncio.create_task(send_general_reminder(t, get_ids())),
             'cron',
             day_of_week=weekday_num,
             hour=hour,

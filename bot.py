@@ -273,7 +273,6 @@ async def reminder_got_time(message: types.Message, state: FSMContext):
     await state.clear()
 
 def get_all_staff_user_ids():
-    # --- ID усіх співробітників з листа 'Штат' ---
     ids = []
     for r in staff_sheet.get_all_records():
         try:
@@ -286,7 +285,6 @@ def get_all_staff_user_ids():
     return ids
 
 def get_today_users():
-    # --- ID тих, хто обрав блок сьогодні (з аркуша 'Завдання на день') ---
     today = get_today()
     user_ids = set()
     for row in day_sheet.get_all_records():
@@ -299,7 +297,6 @@ def get_today_users():
     return list(user_ids)
 
 def get_staff_user_ids_by_username(username):
-    # --- ID за username (без @) ---
     username = str(username).strip().lstrip('@').lower()
     print(f"[DEBUG][Username search] шукаємо username='{username}'")
     ids = []
@@ -324,7 +321,7 @@ async def send_general_reminder(text, ids):
         except Exception as e:
             print(f"[ERROR][send_general_reminder] Cannot send to {user_id}: {e}")
 
-def schedule_general_reminders():
+def schedule_general_reminders(loop):
     rows = general_reminders_sheet.get_all_records()
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
@@ -332,11 +329,8 @@ def schedule_general_reminders():
         "субота": 5, "неділя": 6
     }
 
-    import asyncio
-    main_loop = asyncio.get_event_loop()
-
     def run_async_job(text, ids_func):
-        asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids_func()), main_loop)
+        asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids_func()), loop)
 
     for row in rows:
         print(f"[DEBUG][general loop] row: {row}")
@@ -362,7 +356,7 @@ def schedule_general_reminders():
         elif send_shift:
             ids_func = get_today_users
         elif send_individual and username:
-            _username = username  # потрібен для lambda
+            _username = username
             ids_func = lambda _username=_username: get_staff_user_ids_by_username(_username)
         else:
             continue
@@ -510,9 +504,11 @@ async def universal_back(message: types.Message, state: FSMContext):
 
 # --- Запуск ---
 async def main():
-    schedule_general_reminders()
+    loop = asyncio.get_running_loop()
+    schedule_general_reminders(loop)
     scheduler.start()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    import asyncio
     asyncio.run(main())

@@ -260,17 +260,24 @@ def schedule_general_reminders():
         return list(user_ids)
 
     def get_staff_user_ids_by_username(username):
-        username = str(username).strip().lower()
-        staff_records = staff_sheet.get_all_records()
-        ids = []
-        for r in staff_records:
-            uname = str(r.get("Username", "")).strip().lower()
-            if uname == username and r.get("Telegram ID"):
-                try:
-                    ids.append(int(r["Telegram ID"]))
-                except:
-                    continue
-        return ids
+    # Видаляємо пробіли, @, приводимо до нижнього регістру
+    username = str(username).strip().lstrip('@').lower()
+    print(f"[DEBUG] Шукаємо username: '{username}'")
+    staff_records = staff_sheet.get_all_records()
+    ids = []
+    for r in staff_records:
+        uname = str(r.get("Username", "")).strip().lstrip('@').lower()
+        print(f"[DEBUG] Порівнюємо '{uname}' (таблиця) з '{username}' (вхід)")
+        if uname == username and r.get("Telegram ID"):
+            try:
+                ids.append(int(r["Telegram ID"]))
+            except Exception as e:
+                print(f"Error parsing ID: {e}")
+    print(f"[DEBUG] Знайдені ID: {ids}")
+    return ids
+
+# Тест (встав після функції або в main):
+print("=== ТЕСТ get_staff_user_ids_by_username('aist_st') ===", get_staff_user_ids_by_username('aist_st'))
 
     async def send_general_reminder(text, ids):
         for user_id in ids:

@@ -256,8 +256,6 @@ class PersonalReminderState(StatesGroup):
     wait_text = State()
     wait_time = State()
 
-main_loop = None  # Глобальний event loop
-
 def get_today_users():
     """Повертає список Telegram ID тих, хто обрав блок сьогодні (з аркуша 'Завдання на день')."""
     today = get_today()
@@ -356,16 +354,6 @@ def schedule_general_reminders():
             id=f"general-{day}-{hour}-{minute}",
             replace_existing=True
         )
-
-async def send_general_reminder(text, ids):
-    print("send_general_reminder called:", text, ids)
-    for user_id in ids:
-        try:
-            print(f"Sending to {user_id}")
-            await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
-        except Exception as e:
-            print(f"Cannot send to user {user_id}: {e}")
-            logging.warning(f"Cannot send to user {user_id}: {e}")
 
 # --- Запуск loop в main ---
 async def main():

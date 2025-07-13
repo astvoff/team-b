@@ -314,6 +314,8 @@ async def send_general_reminder(text, ids):
 import asyncio
 from functools import partial
 
+import functools
+
 def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()
     days_map = {
@@ -322,12 +324,14 @@ def schedule_general_reminders():
         "пятниця": 4, "п’ятниця": 4
     }
     loop = asyncio.get_event_loop()
+
     for row in rows:
         day = row.get('День', '').strip().lower()
         time_str = row.get('Час', '').strip()
         text = row.get('Текст', '').strip()
-        general = str(row.get('Загальна розсилка', '')).strip().upper()
+        send_to_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
         usernames = str(row.get('Usernames', '')).strip()
+
         if not day or not time_str or not text:
             continue
         weekday_num = days_map.get(day)
@@ -335,22 +339,16 @@ def schedule_general_reminders():
             continue
         hour, minute = map(int, time_str.split(":"))
 
-        # Визначаємо ids_func згідно логіки:
-        if general == "TRUE":
+        # === Кому розсилати
+        if send_to_all:
             ids_func = get_all_staff_user_ids
             func_args = ()
-        elif general == "FALSE":
-            if usernames:
-                ids_func = get_staff_user_ids_by_usernames
-                func_args = (usernames,)
-            else:
-                ids_func = get_today_users
-                func_args = ()
         elif usernames:
             ids_func = get_staff_user_ids_by_usernames
             func_args = (usernames,)
         else:
-            continue  # нічого не відправляти
+            ids_func = get_today_users
+            func_args = ()
 
         async def job(text, ids_func, func_args):
             ids = ids_func(*func_args)
@@ -358,9 +356,7 @@ def schedule_general_reminders():
             await send_general_reminder(text, ids)
 
         def sync_job(text=text, ids_func=ids_func, func_args=func_args):
-            asyncio.run_coroutine_threadsafe(
-                job(text, ids_func, func_args), loop
-            )
+            asyncio.run_coroutine_threadsafe(job(text, ids_func, func_args), loop)
 
         scheduler.add_job(
             sync_job,

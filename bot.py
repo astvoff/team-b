@@ -287,17 +287,20 @@ def get_all_staff_user_ids():
     return ids
 
 def get_staff_user_ids_by_usernames(usernames):
-    """Повертає Telegram ID співробітників за списком юзернеймів (через кому, без @)."""
     staff_records = staff_sheet.get_all_records()
     username_set = set([u.strip().lower() for u in usernames.split(",") if u.strip()])
+    print("[DEBUG] username_set:", username_set)
     ids = []
     for r in staff_records:
         uname = str(r.get("Username", "")).strip().lower()
+        print("[DEBUG] uname in sheet:", uname)
         if uname in username_set and r.get("Telegram ID"):
             try:
                 ids.append(int(r["Telegram ID"]))
-            except Exception:
+            except Exception as e:
+                print("[ERROR] Cannot convert Telegram ID:", r["Telegram ID"], e)
                 continue
+    print("[DEBUG] Resulting ids:", ids)
     return ids
 
 async def send_general_reminder(text, ids):
@@ -320,21 +323,25 @@ def schedule_general_reminders():
         day = row.get('День', '').strip().lower()
         time_str = row.get('Час', '').strip()
         text = row.get('Текст', '').strip()
-        send_to_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
         usernames = str(row.get('Usernames', '')).strip()
+        send_to_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
+        send_to_block = str(row.get('Загальна розсилка', '')).strip().upper() == "FALSE"
         if not day or not time_str or not text:
             continue
         weekday_num = days_map.get(day)
         if weekday_num is None:
             continue
         hour, minute = map(int, time_str.split(":"))
-        # Головна логіка: якщо є usernames — розсилаємо тільки їм, інакше по флагу.
+        
+        # Логіка вибору функції отримання ID
         if send_to_all:
             ids_func = get_all_staff_user_ids
         elif usernames:
             ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
-        else:
+        elif send_to_block:
             ids_func = get_today_users
+        else:
+            ids_func = get_today_users  # fallback, якщо все пусто
 
         async def job(text=text, ids_func=ids_func):
             ids = ids_func()

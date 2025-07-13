@@ -273,15 +273,22 @@ async def reminder_got_time(message: types.Message, state: FSMContext):
     await state.clear()
 
 def get_all_staff_user_ids():
+    staff_records = staff_sheet.get_all_records()
+    print("[DEBUG][get_all_staff_user_ids] staff_records:", staff_records)
     ids = []
-    for r in staff_sheet.get_all_records():
+    for i, r in enumerate(staff_records):
+        raw_id = r.get("Telegram ID", "")
+        print(f"[DEBUG][get_all_staff_user_ids] Row {i}: Telegram ID raw value: '{raw_id}'")
         try:
-            user_id = int(str(r.get("Telegram ID", "")).strip())
+            user_id = int(str(raw_id).strip())
             if user_id:
                 ids.append(user_id)
+                print(f"[DEBUG][get_all_staff_user_ids] Parsed Telegram ID: {user_id}")
+            else:
+                print(f"[DEBUG][get_all_staff_user_ids] Empty Telegram ID for row {i}")
         except Exception as e:
-            print("[ERROR][get_all_staff_user_ids]", e, r)
-    print("[DEBUG][get_all_staff_user_ids] IDs:", ids)
+            print(f"[DEBUG][get_all_staff_user_ids] Cannot parse Telegram ID for row {i}: '{raw_id}', {e}")
+    print("[DEBUG][get_all_staff_user_ids] Final IDs:", ids)
     return ids
 
 def get_today_users():

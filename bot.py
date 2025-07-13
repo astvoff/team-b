@@ -343,9 +343,16 @@ def schedule_general_reminders():
         asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids_func()), loop)
 
     for row in rows:
-        # ... (твоя логіка отримання параметрів)
-        if not day or not time_str or not text or not (send_all or send_shift or send_individual):
-            continue
+        day = str(row.get('День', '')).strip().lower()
+        time_str = str(row.get('Час', '')).strip()
+        text = str(row.get('Текст', '')).strip()
+        send_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
+        send_shift = str(row.get('Розсилка, хто на зміні', '')).strip().upper() == "TRUE"
+        send_individual = str(row.get('Індивідуальна розсилка', '')).strip().upper() == "TRUE"
+        username = str(row.get('Username', '')).strip()
+
+    if not day or not time_str or not text or not (send_all or send_shift or send_individual):
+        continue
         weekday_num = days_map.get(day)
         if weekday_num is None:
             continue

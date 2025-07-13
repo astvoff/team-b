@@ -327,13 +327,7 @@ def schedule_general_reminders():
             continue
         hour, minute = map(int, time_str.split(":"))
 
-        # === ОНОВЛЕНА ЛОГІКА ===
-        # Якщо TRUE – всім із "Штат"
-        # Якщо FALSE і є username – тільки цим username
-        # Якщо FALSE і username немає – тим, хто обрав блок
-        # Якщо поле пусте, але є username – тільки цим username
-        # Якщо поле пусте і username нема – fallback: тим, хто обрав блок
-
+        # Визначаємо ids_func
         if send_to_all:
             ids_func = get_all_staff_user_ids
         elif send_to_block and usernames:
@@ -347,19 +341,15 @@ def schedule_general_reminders():
 
         async def job(text=text, ids_func=ids_func):
             ids = ids_func()
-            print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
+            print(f"[DEBUG][GENERAL REMINDER] Text: {text} IDs: {ids}")
+            if not ids:
+                print("[WARNING] No recipients for reminder!")
             await send_general_reminder(text, ids)
 
-        def run_async_job():
-            global main_loop
-            if main_loop and main_loop.is_running():
-                main_loop.create_task(job())
-            else:
-                print("[ERROR] main_loop is not running!")
-
+        # Додаємо АСИНХРОННО без run_async_job!
         scheduler.add_job(
-            run_async_job,
-            'cron',
+            job,
+            trigger='cron',
             day_of_week=weekday_num,
             hour=hour,
             minute=minute,

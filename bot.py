@@ -12,6 +12,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
+from functools import partial
 
 
 # --- Константи ---
@@ -330,26 +331,34 @@ def schedule_general_reminders():
             continue
         hour, minute = map(int, time_str.split(":"))
 
-        # --- ГОЛОВНА ЛОГІКА ---
+        # Визначаємо ids_func згідно логіки:
         if general == "TRUE":
             ids_func = get_all_staff_user_ids
+            func_args = ()
         elif general == "FALSE":
             if usernames:
-                ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
+                ids_func = get_staff_user_ids_by_usernames
+                func_args = (usernames,)
             else:
                 ids_func = get_today_users
+                func_args = ()
         elif usernames:
-            ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
+            ids_func = get_staff_user_ids_by_usernames
+            func_args = (usernames,)
         else:
             continue  # нічого не відправляти
 
-        async def job(text=text, ids_func=ids_func):
-            ids = ids_func()
+        async def job(text, ids_func, func_args):
+            ids = ids_func(*func_args)
             print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
             await send_general_reminder(text, ids)
 
+        # partial підв'язує всі аргументи явно (уникнення late binding!)
         scheduler.add_job(
-            job,
+            partial(
+                lambda text, ids_func, func_args: asyncio.create_task(job(text, ids_func, func_args)),
+                text, ids_func, func_args
+            ),
             'cron',
             day_of_week=weekday_num,
             hour=hour,
@@ -357,7 +366,6 @@ def schedule_general_reminders():
             id=f"general-{day}-{hour}-{minute}",
             replace_existing=True
         )
-
 # --- Навігаційне меню користувача ---
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):

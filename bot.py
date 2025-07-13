@@ -253,21 +253,11 @@ class PersonalReminderState(StatesGroup):
     wait_text = State()
     wait_time = State()
 
-  # Отримати Telegram ID всіх співробітників з листа "Штат"
-def get_all_staff_user_ids():
-    # !!! Перевір, щоб колонка з юзернеймами/ID мала унікальне ім’я (наприклад, 'Telegram ID')
-    staff_records = staff_sheet.get_all_records()
-    ids = []
-    for row in staff_records:
-        uid = row.get("Telegram ID") or row.get("User ID")
-        if uid:
-            try:
-                ids.append(int(uid))
-            except Exception:
-                continue
-    return ids
+ import asyncio
 
-# === Отримати мапу username -> user_id зі "Штат"
+# Зберігаємо loop глобально (оголошуєш на початку файлу)
+main_loop = None
+
 def get_staff_username_to_id():
     staff = staff_sheet.get_all_records()
     username_to_id = {}
@@ -278,7 +268,6 @@ def get_staff_username_to_id():
             username_to_id[username.replace('@', '')] = int(tg_id)
     return username_to_id
 
-# === Отримати Telegram ID тих, хто обрав блок сьогодні
 def get_today_users():
     today = get_today()
     records = day_sheet.get_all_records()
@@ -291,7 +280,6 @@ def get_today_users():
                 continue
     return list(user_ids)
 
-# === Отримати всі staff-IDs зі "Штат"
 def get_all_staff_user_ids():
     staff = staff_sheet.get_all_records()
     ids = []
@@ -304,7 +292,6 @@ def get_all_staff_user_ids():
                 continue
     return ids
 
-# === Надсилання загального нагадування
 async def send_general_reminder(text, ids):
     print("send_general_reminder called:", text, ids)
     for user_id in ids:
@@ -314,7 +301,6 @@ async def send_general_reminder(text, ids):
         except Exception as e:
             logging.warning(f"Cannot send to user {user_id}: {e}")
 
-# === Планування загальних нагадувань
 def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()
     days_map = {
@@ -338,7 +324,6 @@ def schedule_general_reminders():
         hour, minute = map(int, time_str.split(":"))
 
         if usernames:
-            # Якщо є юзернейми — тільки їм!
             ids = []
             for username in [u.strip() for u in usernames.split(',') if u.strip()]:
                 user_id = username_to_id.get(username.replace('@', ''))
@@ -355,8 +340,15 @@ def schedule_general_reminders():
             print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
             await send_general_reminder(text, ids)
 
+        # Головна різниця — запускати через run_coroutine_threadsafe
+        def run_async_job():
+            asyncio.run_coroutine_threadsafe(
+                send_general_reminder_job(text, ids_func),
+                main_loop
+            )
+
         scheduler.add_job(
-            lambda text=text, ids_func=ids_func: asyncio.create_task(send_general_reminder_job(text, ids_func)),
+            run_async_job,
             'cron',
             day_of_week=weekday_num,
             hour=hour,
@@ -364,6 +356,19 @@ def schedule_general_reminders():
             id=f"general-{day}-{hour}-{minute}",
             replace_existing=True
         )
+
+# === Постав головний loop у main()
+async def main():
+    global main_loop
+    main_loop = asyncio.get_running_loop()   # ← тут!
+    scheduler.start()
+    schedule_general_reminders()
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+
         
 @dp.message(lambda msg: msg.text == "Створити нагадування")
 async def create_reminder_start(message: types.Message, state: FSMContext):

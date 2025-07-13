@@ -14,6 +14,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from functools import partial
+main_loop = None
 
 
 # --- Константи ---
@@ -338,11 +339,6 @@ def schedule_general_reminders():
             continue
         hour, minute = map(int, time_str.split(":"))
 
-        # --- Логіка:
-        # True     -> всі зі "Штат"
-        # False+Usernames -> тільки вказані Usernames зі "Штат"
-        # False+нічого   -> ті, хто обрав блок сьогодні
-
         if send_to_all:
             ids_func = get_all_staff_user_ids
         elif not send_to_all and usernames:
@@ -355,9 +351,11 @@ def schedule_general_reminders():
             print(f"[DEBUG] == GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
             await send_general_reminder(text, ids)
 
-        # Додаємо через run_async_job щоб працювало з asyncio APScheduler
         def run_async_job():
-            asyncio.get_running_loop().create_task(job())
+            if main_loop and main_loop.is_running():
+                main_loop.create_task(job())
+            else:
+                print("[ERROR] main_loop is not running!")
 
         scheduler.add_job(
             run_async_job,

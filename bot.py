@@ -245,16 +245,13 @@ async def daily_group_reminders():
         schedule_group_reminders()
         await asyncio.sleep(60 * 60 * 6)  # Оновлювати кожні 6 годин (можна змінити)
 
-# --- Запуск воркера в main() ---
-async def main():
-    scheduler.start()
-    asyncio.create_task(daily_group_reminders())  # <--- Додаємо!
-    await dp.start_polling(bot)
 
 # === FSM для особистого нагадування ===
 class PersonalReminderState(StatesGroup):
     wait_text = State()
     wait_time = State()
+
+main_loop = None  # Глобальний event loop
 
 def get_today_users():
     """Повертає список Telegram ID тих, хто обрав блок сьогодні (з аркуша 'Завдання на день')."""
@@ -283,6 +280,7 @@ def get_all_staff_user_ids():
     return ids
 
 def get_staff_user_ids_by_usernames(usernames):
+    """Повертає Telegram ID співробітників за списком юзернеймів (без @)."""
     staff_records = staff_sheet.get_all_records()
     username_set = set([u.strip().lower() for u in usernames.split(",") if u.strip()])
     ids = []
@@ -302,7 +300,7 @@ async def send_general_reminder(text, ids):
             print(f"Sending to {user_id}")
             await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
         except Exception as e:
-            logging.warning(f"Cannot send to user {user_id}: {e}")
+            print(f"[ERROR] Cannot send to user {user_id}: {e}")
 
 def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()
@@ -325,15 +323,20 @@ def schedule_general_reminders():
             continue
         hour, minute = map(int, time_str.split(":"))
 
-        # Визначаємо ids_func
+        # --- Логіка вибору отримувачів:
+        # TRUE — всім співробітникам зі "Штат"
         if send_to_all:
             ids_func = get_all_staff_user_ids
+        # FALSE + Usernames — тільки цим username
         elif send_to_block and usernames:
             ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
+        # FALSE — тим, хто обрав блок сьогодні
         elif send_to_block:
             ids_func = get_today_users
+        # Якщо Usernames (але без FALSE)
         elif usernames:
             ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
+        # Fallback — тим, хто обрав блок
         else:
             ids_func = get_today_users
 
@@ -344,7 +347,6 @@ def schedule_general_reminders():
                 print("[WARNING] No recipients for reminder!")
             await send_general_reminder(text, ids)
 
-        # Додаємо АСИНХРОННО без run_async_job!
         scheduler.add_job(
             job,
             trigger='cron',
@@ -355,13 +357,6 @@ def schedule_general_reminders():
             replace_existing=True
         )
 
-# --- Запуск loop в main ---
-async def main():
-    global main_loop
-    main_loop = asyncio.get_running_loop()
-    schedule_general_reminders()
-    scheduler.start()
-    await dp.start_polling(bot)
         
 # --- Навігаційне меню користувача ---
 @dp.message(CommandStart())

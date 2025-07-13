@@ -321,7 +321,7 @@ def schedule_general_reminders():
         day = row.get('День', '').strip().lower()
         time_str = row.get('Час', '').strip()
         text = row.get('Текст', '').strip()
-        send_to_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
+        general = str(row.get('Загальна розсилка', '')).strip().upper()
         usernames = str(row.get('Usernames', '')).strip()
         if not day or not time_str or not text:
             continue
@@ -330,13 +330,15 @@ def schedule_general_reminders():
             continue
         hour, minute = map(int, time_str.split(":"))
 
-        # Визначаємо ids_func згідно логіки:
-        if send_to_all:
+        # === ОНОВЛЕНА ЛОГІКА ===
+        if general == "TRUE":
             ids_func = get_all_staff_user_ids
+        elif general == "FALSE":
+            ids_func = get_today_users
         elif usernames:
             ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
         else:
-            ids_func = get_today_users
+            continue  # Якщо нічого не вказано
 
         async def job(text=text, ids_func=ids_func):
             ids = ids_func()

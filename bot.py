@@ -328,20 +328,25 @@ async def reminder_confirmed(message: types.Message, state: FSMContext):
         await message.answer("Дію скасовано.", reply_markup=admin_menu_kb)
         return
     data = await state.get_data()
-    # Формуємо рядок для додавання в Google Таблицю
     row = [
-        data.get('day', ''),             # День
-        data.get('time', ''),            # Час
-        data.get('text', ''),            # Текст
+        data.get('day', ''),
+        data.get('time', ''),
+        data.get('text', ''),
         "TRUE" if data['type'] == "Загальне" else "",
         "TRUE" if data['type'] == "Для зміни" else "",
         "TRUE" if data['type'] == "Індивідуальне" else "",
-        data.get('username', ''),        # Username (для індивідуального)
-        data.get('repeat', ''),          # Повтор (для наочності; можна не використовувати у коді, а зчитувати з таблиці)
+        data.get('username', ''),
+        data.get('repeat', ''),
     ]
-    # Додаємо у таблицю "Загальні нагадування"
-    general_reminders_sheet.append_row(row, value_input_option='USER_ENTERED')
-    await message.answer("✅ Нагадування успішно створено!", reply_markup=admin_menu_kb)
+    print(f"[DEBUG][append_row] row={row}")
+    print(f"[DEBUG][sheet name] {general_reminders_sheet.title}")
+    try:
+        general_reminders_sheet.append_row(row, value_input_option='USER_ENTERED')
+        print("[DEBUG][append_row] Успішно додано")
+        await message.answer("✅ Нагадування успішно створено!", reply_markup=admin_menu_kb)
+    except Exception as e:
+        print(f"[ERROR][append_row] {e}")
+        await message.answer(f"❌ Помилка при додаванні у таблицю: {e}", reply_markup=admin_menu_kb)
     await state.clear()
 
 @dp.message(StateFilter('*'), F.text == "Відміна")

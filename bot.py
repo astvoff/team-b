@@ -503,6 +503,7 @@ async def universal_back(message: types.Message, state: FSMContext):
 
 # --- Запуск ---
 async def main():
+    loop = asyncio.get_running_loop()
     schedule_general_reminders(loop)
     scheduler.start()
     await dp.start_polling(bot)

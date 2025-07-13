@@ -273,8 +273,16 @@ async def reminder_got_time(message: types.Message, state: FSMContext):
     await state.clear()
 
 def get_all_staff_user_ids():
-    print("[DEBUG][get_all_staff_user_ids] Повертаємо тестовий ID [438830182]")
-    return [438830182]
+    ids = []
+    for r in staff_sheet.get_all_records():
+        try:
+            user_id = int(str(r.get("Telegram ID", "")).strip())
+            if user_id:
+                ids.append(user_id)
+        except Exception as e:
+            print(f"[DEBUG][get_all_staff_user_ids] Exception: {e}")
+    print(f"[DEBUG][get_all_staff_user_ids] Result: {ids}")
+    return ids
 
 def get_today_users():
     today = get_today()

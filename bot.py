@@ -187,44 +187,7 @@ async def notify_admin_if_needed(user_id, row, task, reminder, block):
                 parse_mode="HTML"
             )
 
-def schedule_reminders_for_user(user_id, tasks):
-    for t in tasks:
-        if not t["time"]:
-            continue
-        times = [tm.strip() for tm in t["time"].split(",") if tm.strip()]
-        for time_str in times:
-            try:
-                remind_time = datetime.strptime(f"{get_today()} {time_str}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
-            except Exception:
-                continue
-            now = now_ua()
-            if remind_time <= now:
-                continue
-            block = t.get("block") or t.get("Блок") or "?"
-            scheduler.add_job(
-                send_reminder,
-                'date',
-                run_date=remind_time,
-                args=[user_id, t["task"], t["reminder"], t["row"]],
-                id=f"{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
-                replace_existing=True
-            )
-            scheduler.add_job(
-                repeat_reminder_if_needed,
-                'date',
-                run_date=remind_time + timedelta(minutes=REMINDER_REPEAT_MINUTES),
-                args=[user_id, t["row"], t["task"], t["reminder"], block],
-                id=f"repeat-{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
-                replace_existing=True
-            )
-            scheduler.add_job(
-                notify_admin_if_needed,
-                'date',
-                run_date=remind_time + timedelta(minutes=ADMIN_NOTIFY_MINUTES),
-                args=[user_id, t["row"], t["task"], t["reminder"], block],
-                id=f"admin-{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
-                replace_existing=True
-            )
+import asyncio
 
 def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()
@@ -234,7 +197,6 @@ def schedule_general_reminders():
         "субота": 5, "неділя": 6
     }
 
-    # Всі Telegram ID зі "Штат"
     def get_all_staff_user_ids():
         staff_records = staff_sheet.get_all_records()
         ids = []
@@ -247,7 +209,6 @@ def schedule_general_reminders():
                 continue
         return ids
 
-    # Telegram ID тих, хто сьогодні на зміні
     def get_today_users():
         today = get_today()
         records = day_sheet.get_all_records()
@@ -260,7 +221,6 @@ def schedule_general_reminders():
                     continue
         return list(user_ids)
 
-    # Telegram ID для одного юзера по Username
     def get_staff_user_ids_by_username(username):
         username = str(username).strip().lstrip('@').lower()
         staff_records = staff_sheet.get_all_records()
@@ -274,7 +234,6 @@ def schedule_general_reminders():
                     continue
         return ids
 
-    # Надсилання повідомлень
     async def send_general_reminder(text, ids):
         for user_id in ids:
             try:
@@ -282,7 +241,6 @@ def schedule_general_reminders():
             except Exception as e:
                 print(f"[ERROR] Cannot send to user {user_id}: {e}")
 
-    # Створюємо задачі-джоби по кожному нагадуванню з таблиці
     for row in rows:
         day = str(row.get('День', '')).strip().lower()
         time_str = str(row.get('Час', '')).strip()
@@ -301,7 +259,6 @@ def schedule_general_reminders():
 
         hour, minute = map(int, time_str.split(":"))
 
-        # Визначаємо тип розсилки
         if send_all:
             ids_func = get_all_staff_user_ids
         elif send_shift:
@@ -311,9 +268,10 @@ def schedule_general_reminders():
         else:
             continue
 
-        async def job(text=text, ids_func=ids_func):
+        # Головна зміна: job – звичайна функція, всередині якої запускається асинхронна задача
+        def job(text=text, ids_func=ids_func):
             ids = ids_func()
-            await send_general_reminder(text, ids)
+            asyncio.create_task(send_general_reminder(text, ids))
 
         scheduler.add_job(
             job,

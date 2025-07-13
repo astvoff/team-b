@@ -12,6 +12,17 @@ from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 main_loop = None
+from aiogram.fsm.state import State, StatesGroup
+
+
+class AdminReminderFSM(StatesGroup):
+    wait_type = State()
+    wait_nick = State()
+    wait_day = State()
+    wait_time = State()
+    wait_text = State()
+    wait_repeat = State()
+    wait_confirm = State()
 
 # --- Константи ---
 load_dotenv()
@@ -59,6 +70,7 @@ user_menu = types.ReplyKeyboardMarkup(
 admin_menu_kb = types.ReplyKeyboardMarkup(
     keyboard=[
         [types.KeyboardButton(text="📋 Завдання на день")],
+        [types.KeyboardButton(text="➕ Додати нагадування")],
         [types.KeyboardButton(text="👁 Контроль виконання")],
         [types.KeyboardButton(text="🔄 Розблокувати блок")],
         [types.KeyboardButton(text="➕ Додати завдання у шаблон")],
@@ -195,6 +207,147 @@ async def notify_admin_if_needed(user_id, row, task, reminder, block):
                 f"Нагадування: {reminder}",
                 parse_mode="HTML"
             )
+
+DAYS = [
+    "понеділок", "вівторок", "середа",
+    "четвер", "пʼятниця", "субота", "неділя"
+]
+
+@dp.message(F.text == "➕ Додати нагадування")
+async def admin_create_reminder(message: types.Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔️ Тільки для адміністратора")
+        return
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=[
+            [types.KeyboardButton(text="Загальне"), types.KeyboardButton(text="Для зміни")],
+            [types.KeyboardButton(text="Індивідуальне")],
+            [types.KeyboardButton(text="Відміна")]
+        ], resize_keyboard=True
+    )
+    await message.answer("Виберіть тип нагадування:", reply_markup=kb)
+    await state.set_state(AdminReminderFSM.wait_type)
+
+@dp.message(AdminReminderFSM.wait_type)
+async def reminder_type_chosen(message: types.Message, state: FSMContext):
+    if message.text == "Відміна":
+        await state.clear()
+        await message.answer("Дію скасовано.", reply_markup=admin_menu_kb)
+        return
+    data = {"type": message.text}
+    await state.update_data(**data)
+    if message.text == "Індивідуальне":
+        await message.answer("Введіть нікнейм користувача (без @):", reply_markup=types.ReplyKeyboardRemove())
+        await state.set_state(AdminReminderFSM.wait_nick)
+    else:
+        await ask_day(message, state)
+
+@dp.message(AdminReminderFSM.wait_nick)
+async def reminder_nick_chosen(message: types.Message, state: FSMContext):
+    await state.update_data(username=message.text.strip())
+    await ask_day(message, state)
+
+async def ask_day(message, state):
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=[[types.KeyboardButton(text=day.title())] for day in DAYS] + [[types.KeyboardButton(text="Відміна")]],
+        resize_keyboard=True
+    )
+    await message.answer("Виберіть день:", reply_markup=kb)
+    await state.set_state(AdminReminderFSM.wait_day)
+
+@dp.message(AdminReminderFSM.wait_day)
+async def reminder_day_chosen(message: types.Message, state: FSMContext):
+    if message.text == "Відміна":
+        await state.clear()
+        await message.answer("Дію скасовано.", reply_markup=admin_menu_kb)
+        return
+    if message.text.lower() not in DAYS:
+        await message.answer("Будь ласка, оберіть день із клавіатури.")
+        return
+    await state.update_data(day=message.text.lower())
+    await message.answer("Введіть час у форматі ГГ:ХХ (наприклад, 13:30):", reply_markup=types.ReplyKeyboardRemove())
+    await state.set_state(AdminReminderFSM.wait_time)
+
+@dp.message(AdminReminderFSM.wait_time)
+async def reminder_time_chosen(message: types.Message, state: FSMContext):
+    time_str = message.text.strip()
+    try:
+        _ = datetime.strptime(time_str, "%H:%M")
+    except Exception:
+        await message.answer("Невірний формат часу. Введіть у форматі ГГ:ХХ (наприклад, 09:25):")
+        return
+    await state.update_data(time=time_str)
+    await message.answer("Введіть текст нагадування:")
+    await state.set_state(AdminReminderFSM.wait_text)
+
+@dp.message(AdminReminderFSM.wait_text)
+async def reminder_text_chosen(message: types.Message, state: FSMContext):
+    await state.update_data(text=message.text)
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=[
+            [types.KeyboardButton(text="Щотижня"), types.KeyboardButton(text="Одноразове")],
+            [types.KeyboardButton(text="Відміна")]
+        ], resize_keyboard=True
+    )
+    await message.answer("Оберіть повторюваність:", reply_markup=kb)
+    await state.set_state(AdminReminderFSM.wait_repeat)
+
+@dp.message(AdminReminderFSM.wait_repeat)
+async def reminder_repeat_chosen(message: types.Message, state: FSMContext):
+    if message.text == "Відміна":
+        await state.clear()
+        await message.answer("Дію скасовано.", reply_markup=admin_menu_kb)
+        return
+    if message.text not in ["Щотижня", "Одноразове"]:
+        await message.answer("Оберіть варіант із клавіатури.")
+        return
+    await state.update_data(repeat=message.text)
+    data = await state.get_data()
+    confirm_text = (
+        f"<b>Підтвердіть створення нагадування:</b>\n"
+        f"Тип: <b>{data.get('type')}</b>\n"
+        f"{'Нік: @' + data['username'] if data.get('username') else ''}\n"
+        f"День: <b>{data['day'].title()}</b>\n"
+        f"Час: <b>{data['time']}</b>\n"
+        f"Текст: <b>{data['text']}</b>\n"
+        f"Повтор: <b>{data['repeat']}</b>\n\n"
+        "Підтвердити створення?"
+    )
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=[
+            [types.KeyboardButton(text="Підтвердити"), types.KeyboardButton(text="Відміна")]
+        ], resize_keyboard=True
+    )
+    await message.answer(confirm_text, reply_markup=kb, parse_mode="HTML")
+    await state.set_state(AdminReminderFSM.wait_confirm)
+
+@dp.message(AdminReminderFSM.wait_confirm)
+async def reminder_confirmed(message: types.Message, state: FSMContext):
+    if message.text == "Відміна":
+        await state.clear()
+        await message.answer("Дію скасовано.", reply_markup=admin_menu_kb)
+        return
+    data = await state.get_data()
+    # Формуємо рядок для додавання в Google Таблицю
+    row = [
+        data.get('day', ''),             # День
+        data.get('time', ''),            # Час
+        data.get('text', ''),            # Текст
+        "TRUE" if data['type'] == "Загальне" else "",
+        "TRUE" if data['type'] == "Для зміни" else "",
+        "TRUE" if data['type'] == "Індивідуальне" else "",
+        data.get('username', ''),        # Username (для індивідуального)
+        data.get('repeat', ''),          # Повтор (для наочності; можна не використовувати у коді, а зчитувати з таблиці)
+    ]
+    # Додаємо у таблицю "Загальні нагадування"
+    general_reminders_sheet.append_row(row, value_input_option='USER_ENTERED')
+    await message.answer("✅ Нагадування успішно створено!", reply_markup=admin_menu_kb)
+    await state.clear()
+
+@dp.message(StateFilter('*'), F.text == "Відміна")
+async def universal_cancel(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Дію скасовано.", reply_markup=admin_menu_kb)
 
 def schedule_reminders_for_user(user_id, tasks):
     for t in tasks:

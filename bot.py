@@ -227,7 +227,6 @@ def schedule_reminders_for_user(user_id, tasks):
             )
 
 def schedule_general_reminders():
-    print("schedule_general_reminders CALLED")
     rows = general_reminders_sheet.get_all_records()
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
@@ -235,6 +234,7 @@ def schedule_general_reminders():
         "субота": 5, "неділя": 6
     }
 
+    # Всі Telegram ID зі "Штат"
     def get_all_staff_user_ids():
         staff_records = staff_sheet.get_all_records()
         ids = []
@@ -243,10 +243,11 @@ def schedule_general_reminders():
                 user_id = int(str(r.get("Telegram ID", "")).strip())
                 if user_id:
                     ids.append(user_id)
-            except:
+            except Exception:
                 continue
         return ids
 
+    # Telegram ID тих, хто сьогодні на зміні
     def get_today_users():
         today = get_today()
         records = day_sheet.get_all_records()
@@ -255,37 +256,33 @@ def schedule_general_reminders():
             if str(row.get("Дата")) == today and row.get("Telegram ID"):
                 try:
                     user_ids.add(int(row["Telegram ID"]))
-                except:
+                except Exception:
                     continue
         return list(user_ids)
 
+    # Telegram ID для одного юзера по Username
     def get_staff_user_ids_by_username(username):
         username = str(username).strip().lstrip('@').lower()
-        print(f"[DEBUG] Шукаємо username: '{username}'")
         staff_records = staff_sheet.get_all_records()
         ids = []
         for r in staff_records:
             uname = str(r.get("Username", "")).strip().lstrip('@').lower()
-            print(f"[DEBUG] Порівнюємо '{uname}' (таблиця) з '{username}' (вхід)")
             if uname == username and r.get("Telegram ID"):
                 try:
                     ids.append(int(r["Telegram ID"]))
-                except Exception as e:
-                    print(f"Error parsing ID: {e}")
-        print(f"[DEBUG] Знайдені ID: {ids}")
+                except Exception:
+                    continue
         return ids
 
-# Тест (встав після функції або в main):
-print("=== ТЕСТ get_staff_user_ids_by_username('aist_st') ===", get_staff_user_ids_by_username('aist_st'))
-
+    # Надсилання повідомлень
     async def send_general_reminder(text, ids):
         for user_id in ids:
             try:
                 await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
-                print(f"[SENT] To {user_id}: {text}")
             except Exception as e:
                 print(f"[ERROR] Cannot send to user {user_id}: {e}")
 
+    # Створюємо задачі-джоби по кожному нагадуванню з таблиці
     for row in rows:
         day = str(row.get('День', '')).strip().lower()
         time_str = str(row.get('Час', '')).strip()
@@ -304,22 +301,19 @@ print("=== ТЕСТ get_staff_user_ids_by_username('aist_st') ===", get_staff_us
 
         hour, minute = map(int, time_str.split(":"))
 
+        # Визначаємо тип розсилки
         if send_all:
             ids_func = get_all_staff_user_ids
         elif send_shift:
             ids_func = get_today_users
         elif send_individual and username:
-            ids_func = lambda: get_staff_user_ids_by_username(username)
+            ids_func = lambda username=username: get_staff_user_ids_by_username(username)
         else:
             continue
 
         async def job(text=text, ids_func=ids_func):
-            try:
-                ids = ids_func()
-                await send_general_reminder(text, ids)
-                print(f"GENERAL REMINDER job RUN: {text}, ids={ids}")
-            except Exception as e:
-                print(f"[ERROR in job]: {e}")
+            ids = ids_func()
+            await send_general_reminder(text, ids)
 
         scheduler.add_job(
             job,
@@ -330,7 +324,6 @@ print("=== ТЕСТ get_staff_user_ids_by_username('aist_st') ===", get_staff_us
             id=f"general-{day}-{hour}-{minute}-{username or 'all'}",
             replace_existing=True
         )
-        print("Added job", f"general-{day}-{hour}-{minute}-{username or 'all'}")
         
 # === FSM для створення особистого нагадування ===
 class PersonalReminderState(StatesGroup):

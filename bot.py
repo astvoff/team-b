@@ -253,54 +253,6 @@ class PersonalReminderState(StatesGroup):
     wait_text = State()
     wait_time = State()
 
-def get_all_staff_user_ids():
-    """Повертає список Telegram ID всіх співробітників з листа 'Штат'."""
-    staff_records = staff_sheet.get_all_records()
-    ids = []
-    for r in staff_records:
-        try:
-            user_id = int(r.get("Telegram ID", 0))
-            if user_id:
-                ids.append(user_id)
-        except Exception:
-            continue
-    return ids
-
-def get_staff_user_ids_by_usernames(usernames):
-    """Повертає Telegram ID співробітників за списком юзернеймів."""
-    staff_records = staff_sheet.get_all_records()
-    username_set = set([u.strip().lower() for u in usernames.split(",") if u.strip()])
-    ids = []
-    for r in staff_records:
-        uname = str(r.get("Username", "")).strip().lower()
-        if uname in username_set and r.get("Telegram ID"):
-            try:
-                ids.append(int(r["Telegram ID"]))
-            except Exception:
-                continue
-    return ids
-
-def get_today_users():
-    today = get_today()
-    records = day_sheet.get_all_records()
-    user_ids = set()
-    for row in records:
-        if str(row.get("Дата")) == today and row.get("Telegram ID"):
-            try:
-                user_ids.add(int(row["Telegram ID"]))
-            except Exception:
-                continue
-    return list(user_ids)
-
-async def send_general_reminder(text, ids):
-    print("send_general_reminder called:", text, ids)
-    for user_id in ids:
-        try:
-            print(f"Sending to {user_id}")
-            await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
-        except Exception as e:
-            logging.warning(f"Cannot send to user {user_id}: {e}")
-
 def schedule_general_reminders():
     rows = general_reminders_sheet.get_all_records()
     days_map = {
@@ -333,12 +285,19 @@ def schedule_general_reminders():
             print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
             await send_general_reminder(text, ids)
 
+        # --- Ось ця функція 100% працює у будь-якому середовищі ---
         def run_async_job():
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(send_general_reminder_job())
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop and loop.is_running():
+                asyncio.ensure_future(send_general_reminder_job())
             else:
-                asyncio.run(send_general_reminder_job())
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                new_loop.run_until_complete(send_general_reminder_job())
+                new_loop.close()
 
         scheduler.add_job(
             run_async_job,
@@ -349,57 +308,6 @@ def schedule_general_reminders():
             id=f"general-{day}-{hour}-{minute}",
             replace_existing=True
         )
-        
-@dp.message(lambda msg: msg.text == "Створити нагадування")
-async def create_reminder_start(message: types.Message, state: FSMContext):
-    await message.answer("Введіть текст нагадування:")
-    await state.set_state(PersonalReminderState.wait_text)
-    
-@dp.message(StateFilter('*'), F.text == "Відмінити дію")
-async def universal_back(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)
-
-@dp.message(PersonalReminderState.wait_text)
-async def create_reminder_text(message: types.Message, state: FSMContext):
-    await state.update_data(reminder_text=message.text.strip())
-    await message.answer("Вкажіть час нагадування у форматі HH:MM (наприклад, 14:30):")
-    await state.set_state(PersonalReminderState.wait_time)
-
-@dp.message(StateFilter('*'), F.text == "Відмінити дію")
-async def universal_back(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer("⬅️ Повернулись до меню.", reply_markup=user_menu)
-
-@dp.message(PersonalReminderState.wait_time)
-async def create_reminder_time(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    reminder_time = message.text.strip()
-    user_id = message.from_user.id
-    today = get_today()
-    # Додаємо у Google Таблицю
-    day_sheet.append_row([
-        today, "", "", data["reminder_text"], reminder_time, "", user_id, "", ""
-    ])
-    # Плануємо нагадування одразу
-    remind_dt = datetime.strptime(f"{today} {reminder_time}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
-    scheduler.add_job(
-        send_personal_reminder,
-        'date',
-        run_date=remind_dt,
-        args=[user_id, data["reminder_text"], reminder_time]
-    )
-    await message.answer(f"✅ Нагадування встановлено на {reminder_time}!\n"
-                         "Вам прийде повідомлення у зазначений час.", reply_markup=user_menu)
-    await state.clear()
-
-async def send_personal_reminder(user_id, reminder_text, reminder_time):
-    await bot.send_message(
-        user_id,
-        f"<b>Особисте нагадування!</b>\n"
-        f"{reminder_text}",
-        parse_mode="HTML"
-    )
 
 # --- Навігаційне меню користувача ---
 @dp.message(CommandStart())

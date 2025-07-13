@@ -253,8 +253,34 @@ class PersonalReminderState(StatesGroup):
     wait_text = State()
     wait_time = State()
 
+def get_all_staff_user_ids():
+    """Повертає список Telegram ID всіх співробітників з листа 'Штат'."""
+    staff_records = staff_sheet.get_all_records()
+    ids = []
+    for r in staff_records:
+        try:
+            user_id = int(r.get("Telegram ID", 0))
+            if user_id:
+                ids.append(user_id)
+        except Exception:
+            continue
+    return ids
+
+def get_staff_user_ids_by_usernames(usernames):
+    """Повертає Telegram ID співробітників за списком юзернеймів."""
+    staff_records = staff_sheet.get_all_records()
+    username_set = set([u.strip().lower() for u in usernames.split(",") if u.strip()])
+    ids = []
+    for r in staff_records:
+        uname = str(r.get("Username", "")).strip().lower()
+        if uname in username_set and r.get("Telegram ID"):
+            try:
+                ids.append(int(r["Telegram ID"]))
+            except Exception:
+                continue
+    return ids
+
 def get_today_users():
-    """Отримати Telegram ID тих, хто обрав блок сьогодні."""
     today = get_today()
     records = day_sheet.get_all_records()
     user_ids = set()
@@ -265,34 +291,6 @@ def get_today_users():
             except Exception:
                 continue
     return list(user_ids)
-
-def get_all_staff_user_ids():
-    """Отримати всі Telegram ID з листа Штат."""
-    staff_records = staff_sheet.get_all_records()
-    ids = []
-    for row in staff_records:
-        try:
-            tid = int(row.get("Telegram ID"))
-            if tid:
-                ids.append(tid)
-        except Exception:
-            continue
-    return ids
-
-def get_user_ids_by_usernames(usernames_list):
-    """Повертає список Telegram ID за списком юзернеймів із листа 'Штат'."""
-    staff_records = staff_sheet.get_all_records()
-    result_ids = []
-    for uname in usernames_list:
-        uname = uname.strip().lstrip("@")
-        for row in staff_records:
-            row_uname = str(row.get("Username", "")).strip().lstrip("@")
-            if row_uname.lower() == uname.lower():
-                tg_id = row.get("Telegram ID")
-                if tg_id:
-                    result_ids.append(int(tg_id))
-                break
-    return result_ids
 
 async def send_general_reminder(text, ids):
     print("send_general_reminder called:", text, ids)
@@ -314,7 +312,8 @@ def schedule_general_reminders():
         day = row.get('День', '').strip().lower()
         time_str = row.get('Час', '').strip()
         text = row.get('Текст', '').strip()
-        send_to = (row.get('Загальна розсилка') or '').strip()
+        send_to_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
+        usernames = str(row.get('Usernames', '')).strip()
         if not day or not time_str or not text:
             continue
         weekday_num = days_map.get(day)
@@ -322,23 +321,22 @@ def schedule_general_reminders():
             continue
         hour, minute = map(int, time_str.split(":"))
 
-        # Кому слати:
-        if send_to.upper() == "TRUE":
+        # Визначаємо ids_func згідно логіки:
+        if send_to_all:
             ids_func = get_all_staff_user_ids
-        elif send_to.upper() == "FALSE" or send_to == "":
-            ids_func = get_today_users
+        elif usernames:
+            ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
         else:
-            usernames = [u.strip() for u in send_to.split(",") if u.strip()]
-            ids_func = lambda: get_user_ids_by_usernames(usernames)
+            ids_func = get_today_users
 
-        async def job(text=text, ids_func=ids_func):
+        async def send_general_reminder_job(text=text, ids_func=ids_func):
             ids = ids_func()
-            print(f"== GENERAL REMINDER JOB TRIGGERED ==\nText: {text}\nIDs: {ids}")
+            print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
             await send_general_reminder(text, ids)
 
-        # Обгортка для запуску асинхронної функції у APScheduler
+        # Додаємо job як async через run_async_job
         def run_async_job():
-            asyncio.get_event_loop().create_task(job())
+            asyncio.get_event_loop().create_task(send_general_reminder_job())
 
         scheduler.add_job(
             run_async_job,

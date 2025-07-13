@@ -1,7 +1,6 @@
 import os
 import logging
 import asyncio
-import functools
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
@@ -13,9 +12,6 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
-from functools import partial
-main_loop = None
-
 
 # --- Константи ---
 load_dotenv()
@@ -27,24 +23,18 @@ ADMIN_NOTIFY_MINUTES = 30
 ADMIN_IDS = [438830182]   # <-- твій Telegram ID
 logging.basicConfig(level=logging.INFO)
 
-
-
 # --- Google Sheets ---
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
 gs = gspread.authorize(creds)
 TEMPLATE_SHEET = 'Шаблони блоків'
 DAY_SHEET = 'Завдання на день'
-GENERAL_REMINDERS_SHEET = 'Загальні нагадування'
 INFORMATION_BASE_SHEET = 'Інформаційна база'
 STAFF_SHEET = "Штат"
 template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
 day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
 information_base_sheet = gs.open_by_key(SHEET_KEY).worksheet(INFORMATION_BASE_SHEET)
-general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
 staff_sheet = gs.open_by_key(SHEET_KEY).worksheet(STAFF_SHEET)
-
-
 
 # --- Telegram бот ---
 bot = Bot(token=BOT_TOKEN)
@@ -239,159 +229,6 @@ def schedule_reminders_for_user(user_id, tasks):
                 replace_existing=True
             )
 
-# --- Планувати щодня після запуску ---
-async def daily_group_reminders():
-    while True:
-        schedule_group_reminders()
-        await asyncio.sleep(60 * 60 * 6)  # Оновлювати кожні 6 годин (можна змінити)
-
-
-# === FSM для особистого нагадування ===
-class PersonalReminderState(StatesGroup):
-    wait_text = State()
-    wait_time = State()
-
-main_loop = None  # Глобальний event loop
-
-def get_today_users():
-    """Повертає список Telegram ID тих, хто обрав блок сьогодні (з аркуша 'Завдання на день')."""
-    today = get_today()
-    records = day_sheet.get_all_records()
-    user_ids = set()
-    for row in records:
-        if str(row.get("Дата")) == today and row.get("Telegram ID"):
-            try:
-                user_ids.add(int(row["Telegram ID"]))
-            except Exception:
-                continue
-    return list(user_ids)
-
-def get_all_staff_user_ids():
-    """Повертає список Telegram ID усіх співробітників з листа 'Штат'."""
-    staff_records = staff_sheet.get_all_records()
-    ids = []
-    for r in staff_records:
-        try:
-            user_id = int(r.get("Telegram ID", 0))
-            if user_id:
-                ids.append(user_id)
-        except Exception:
-            continue
-    return ids
-
-def get_staff_user_ids_by_usernames(usernames):
-    """Повертає Telegram ID співробітників за списком юзернеймів (без @)."""
-    staff_records = staff_sheet.get_all_records()
-    username_set = set([u.strip().lower() for u in usernames.split(",") if u.strip()])
-    ids = []
-    for r in staff_records:
-        uname = str(r.get("Username", "")).strip().lower()
-        if uname in username_set and r.get("Telegram ID"):
-            try:
-                ids.append(int(r["Telegram ID"]))
-            except Exception:
-                continue
-    return ids
-
-async def send_general_reminder(text, ids):
-    print("send_general_reminder called:", text, ids)
-    for user_id in ids:
-        try:
-            print(f"Sending to {user_id}")
-            await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
-        except Exception as e:
-            print(f"[ERROR] Cannot send to user {user_id}: {e}")
-
-def get_all_staff_user_ids():
-    staff_records = staff_sheet.get_all_records()
-    ids = []
-    for r in staff_records:
-        try:
-            user_id = int(r.get("Telegram ID", 0))
-            if user_id:
-                ids.append(user_id)
-        except Exception:
-            continue
-    return ids
-
-def get_staff_user_ids_by_usernames(usernames):
-    staff_records = staff_sheet.get_all_records()
-    username_set = set([u.strip().lower() for u in usernames.split(",") if u.strip()])
-    ids = []
-    for r in staff_records:
-        uname = str(r.get("Username", "")).strip().lower()
-        if uname in username_set and r.get("Telegram ID"):
-            try:
-                ids.append(int(r["Telegram ID"]))
-            except Exception:
-                continue
-    return ids
-
-def get_today_users():
-    today = get_today()
-    records = day_sheet.get_all_records()
-    user_ids = set()
-    for row in records:
-        if str(row.get("Дата")) == today and row.get("Telegram ID"):
-            try:
-                user_ids.add(int(row["Telegram ID"]))
-            except Exception:
-                continue
-    return list(user_ids)
-
-async def send_general_reminder(text, ids):
-    print("send_general_reminder called:", text, ids)
-    for user_id in ids:
-        try:
-            print(f"Sending to {user_id}")
-            await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
-        except Exception as e:
-            logging.warning(f"Cannot send to user {user_id}: {e}")
-
-def schedule_general_reminders():
-    rows = general_reminders_sheet.get_all_records()
-    days_map = {
-        "понеділок": 0, "вівторок": 1, "середа": 2,
-        "четвер": 3, "пʼятниця": 4, "субота": 5, "неділя": 6,
-        "пятниця": 4, "п’ятниця": 4
-    }
-    for row in rows:
-        day = row.get('День', '').strip().lower()
-        time_str = row.get('Час', '').strip()
-        text = row.get('Текст', '').strip()
-        send_to_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
-        usernames = str(row.get('Usernames', '')).strip()
-        if not day or not time_str or not text:
-            continue
-        weekday_num = days_map.get(day)
-        if weekday_num is None:
-            continue
-        hour, minute = map(int, time_str.split(":"))
-
-        if send_to_all:
-            ids_func = get_all_staff_user_ids
-        elif usernames:
-            ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
-        else:
-            ids_func = get_today_users
-
-        async def job(text=text, ids_func=ids_func):
-            ids = ids_func()
-            print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
-            if not ids:
-                print("No users found for reminder!")
-            await send_general_reminder(text, ids)
-
-        scheduler.add_job(
-            job,
-            'cron',
-            day_of_week=weekday_num,
-            hour=hour,
-            minute=minute,
-            id=f"general-{day}-{hour}-{minute}",
-            replace_existing=True
-        )
-        
 # --- Навігаційне меню користувача ---
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):
@@ -467,33 +304,6 @@ async def show_information_items(call: types.CallbackQuery):
     await call.message.answer(text.strip(), parse_mode="HTML")
     await call.answer()
 
-@dp.callback_query(lambda c: c.data.startswith("kb_cat_"))
-async def show_knowledge_base_category(call: types.CallbackQuery):
-    cat = call.data.replace("kb_cat_", "")
-    records = knowledge_base_sheet.get_all_records()
-    entries = [row for row in records if str(row.get("Категорія")) == cat]
-    if not entries:
-        await call.message.answer("Нічого не знайдено.")
-        await call.answer()
-        return
-
-    msg = f"📚 <b>Інформаційна база — {cat}:</b>\n"
-    for row in entries:
-        name = row.get("Назва", "-")
-        link = row.get("Посилання (або текст)", "-")
-        desc = row.get("Опис (опціонально)", "")
-        # Якщо це посилання — форматувати як гіперлінк
-        if link.startswith("http"):
-            link = f'<a href="{link}">{name}</a>'
-        else:
-            link = f"{name}: {link}"
-        msg += f"— {link}"
-        if desc:
-            msg += f"\n   <i>{desc}</i>"
-        msg += "\n"
-    await call.message.answer(msg, parse_mode="HTML", disable_web_page_preview=True)
-    await call.answer()
-    
 @dp.message(lambda msg: msg.text and msg.text.strip().lower() == 'розпочати день')
 async def choose_blocks_count(message: types.Message):
     kb = types.ReplyKeyboardMarkup(
@@ -561,9 +371,6 @@ async def universal_back(message: types.Message, state: FSMContext):
 
 # --- Запуск ---
 async def main():
-    global main_loop
-    main_loop = asyncio.get_running_loop()
-    schedule_general_reminders()
     scheduler.start()
     await dp.start_polling(bot)
 

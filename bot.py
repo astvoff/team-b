@@ -256,8 +256,6 @@ class PersonalReminderState(StatesGroup):
     wait_text = State()
     wait_time = State()
 
-# --- Загальні нагадування ---
-
 main_loop = None  # Глобальний event loop
 
 def get_today_users():
@@ -289,18 +287,14 @@ def get_all_staff_user_ids():
 def get_staff_user_ids_by_usernames(usernames):
     staff_records = staff_sheet.get_all_records()
     username_set = set([u.strip().lower() for u in usernames.split(",") if u.strip()])
-    print("[DEBUG] username_set:", username_set)
     ids = []
     for r in staff_records:
         uname = str(r.get("Username", "")).strip().lower()
-        print("[DEBUG] uname in sheet:", uname)
         if uname in username_set and r.get("Telegram ID"):
             try:
                 ids.append(int(r["Telegram ID"]))
-            except Exception as e:
-                print("[ERROR] Cannot convert Telegram ID:", r["Telegram ID"], e)
+            except Exception:
                 continue
-    print("[DEBUG] Resulting ids:", ids)
     return ids
 
 async def send_general_reminder(text, ids):
@@ -332,16 +326,24 @@ def schedule_general_reminders():
         if weekday_num is None:
             continue
         hour, minute = map(int, time_str.split(":"))
-        
-        # Логіка вибору функції отримання ID
+
+        # === ОНОВЛЕНА ЛОГІКА ===
+        # Якщо TRUE – всім із "Штат"
+        # Якщо FALSE і є username – тільки цим username
+        # Якщо FALSE і username немає – тим, хто обрав блок
+        # Якщо поле пусте, але є username – тільки цим username
+        # Якщо поле пусте і username нема – fallback: тим, хто обрав блок
+
         if send_to_all:
             ids_func = get_all_staff_user_ids
-        elif usernames:
+        elif send_to_block and usernames:
             ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
         elif send_to_block:
             ids_func = get_today_users
+        elif usernames:
+            ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
         else:
-            ids_func = get_today_users  # fallback, якщо все пусто
+            ids_func = get_today_users
 
         async def job(text=text, ids_func=ids_func):
             ids = ids_func()

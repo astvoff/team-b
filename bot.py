@@ -313,10 +313,10 @@ def schedule_general_reminders():
 
         # Створюємо асинхронну задачу для APScheduler
         async def job(text=text, ids_func=ids_func):
-    ids = ids_func()
-    print(f"[GENERAL REMINDER JOB] {text} | ids: {ids}")
-    await send_general_reminder(text, ids)
-
+            ids = ids_func()
+            print(f"[GENERAL REMINDER JOB] {text} | ids: {ids}")
+            await send_general_reminder(text, ids)
+ 
         scheduler.add_job(
             job,
             'cron',

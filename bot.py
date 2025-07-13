@@ -309,7 +309,7 @@ def get_today_users():
         print(f"[DEBUG][get_today_users] day_sheet rows: {len(rows)}")
         for row in rows:
             print(f"[DEBUG][general loop] row: {row}")
-            print(f"[DEBUG][flags] Загальна: {is_true(row.get('Загальна розсилка', ''))}, Хто на зміні: {is_true(row.get('Розсилка, хто на зміні', ''))}, Індивід: {is_true(row.get('Індивідуальна розсилка', ''))}")
+            print(f"[DEBUG][flags] Загальна: {is_true(row.get('Загальна', ''))}, Хто на зміні: {is_true(row.get('Розсилка, хто на зміні', ''))}, Індивід: {is_true(row.get('Індивідуальна розсилка', ''))}")
             if str(row.get("Дата")) == today and row.get("Telegram ID"):
                 try:
                     user_ids.add(int(row["Telegram ID"]))

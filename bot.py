@@ -30,10 +30,12 @@ TEMPLATE_SHEET = 'Шаблони блоків'
 DAY_SHEET = 'Завдання на день'
 INFORMATION_BASE_SHEET = 'Інформаційна база'
 STAFF_SHEET = "Штат"
+GENERAL_REMINDERS_SHEET = "Загальні нагадування"
 template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
 day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
 information_base_sheet = gs.open_by_key(SHEET_KEY).worksheet(INFORMATION_BASE_SHEET)
 staff_sheet = gs.open_by_key(SHEET_KEY).worksheet(STAFF_SHEET)
+general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
 
 # --- Telegram бот ---
 bot = Bot(token=BOT_TOKEN)
@@ -224,77 +226,105 @@ def schedule_reminders_for_user(user_id, tasks):
                 replace_existing=True
             )
 
-async def send_global_reminders():
-    reminders_ws = gs.open_by_key(SHEET_KEY).worksheet("Загальні нагадування")
-    staff_ws = gs.open_by_key(SHEET_KEY).worksheet("Штат")
-    staff = staff_ws.get_all_records()
-    staff_dict = {str(s["Username"]).strip(): str(s["Telegram ID"]).strip() for s in staff if s.get("Telegram ID")}
+def schedule_general_reminders():
+    rows = general_reminders_sheet.get_all_records()
+    days_map = {
+        "понеділок": 0, "вівторок": 1, "середа": 2,
+        "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
+        "субота": 5, "неділя": 6
+    }
 
-    reminders = reminders_ws.get_all_records()
-    today_weekday = now_ua().strftime("%A").lower()  # наприклад, "вівторок"
-    today_date = now_ua().strftime('%Y-%m-%d')
-    current_time = now_ua().strftime('%H:%M')
-
-    # Беремо лише ті нагадування, що мають час == поточний та день == сьогодні
-    for row in reminders:
-        # День може бути рядком або списком
-        day_match = False
-        day_cell = str(row.get("День", "")).strip().lower()
-        if day_cell:
-            for d in day_cell.split(","):
-                if d.strip() == now_ua().strftime('%A').lower() or d.strip() == now_ua().strftime('%a').lower():
-                    day_match = True
-                    break
-        if not day_match:
-            continue
-        if str(row.get("Час", "")).strip() != current_time:
-            continue
-
-        text = row.get("Текст", "")
-        send_all = row.get("Загальна розсилка") in [True, "TRUE", "✓", "✔️", "✅"]
-        send_on_shift = row.get("Розсилка, хто на зміні") in [True, "TRUE", "✓", "✔️", "✅"]
-        send_personal = row.get("Індивідуальна розсилка") in [True, "TRUE", "✓", "✔️", "✅"]
-        username = str(row.get("Username", "")).strip()
-
-        # 1. Загальна розсилка — всім із Штату
-        if send_all:
-            for user, tg_id in staff_dict.items():
-                try:
-                    await bot.send_message(chat_id=int(tg_id), text=text)
-                except Exception as e:
-                    print(f"Не вдалося надіслати {user}: {e}")
-
-        # 2. Розсилка для тих, хто на зміні
-        if send_on_shift:
-            # Отримати user_id тих, хто сьогодні на зміні
-            today = get_today()
-            day_records = day_sheet.get_all_records()
-            users_on_shift = set()
-            for r in day_records:
-                if str(r.get("Дата")) == today and r.get("Telegram ID"):
-                    users_on_shift.add(str(r.get("Telegram ID")))
-            for tg_id in users_on_shift:
-                try:
-                    await bot.send_message(chat_id=int(tg_id), text=text)
-                except Exception as e:
-                    print(f"Не вдалося надіслати (зміна) {tg_id}: {e}")
-
-        # 3. Індивідуальна розсилка — лише зазначеному користувачу
-        if send_personal and username and username in staff_dict:
-            tg_id = staff_dict[username]
+    # Всі Telegram ID зі "Штат"
+    def get_all_staff_user_ids():
+        staff_records = staff_sheet.get_all_records()
+        ids = []
+        for r in staff_records:
             try:
-                await bot.send_message(chat_id=int(tg_id), text=text)
-            except Exception as e:
-                print(f"Не вдалося надіслати (особисто) {username}: {e}")
+                user_id = int(str(r.get("Telegram ID", "")).strip())
+                if user_id:
+                    ids.append(user_id)
+            except:
+                continue
+        return ids
 
-def schedule_global_reminders():
-    scheduler.add_job(
-        send_global_reminders,
-        trigger="cron",
-        minute="*",
-        id="global_reminders",
-        replace_existing=True
-    )
+    # Telegram ID тих, хто сьогодні на зміні
+    def get_today_users():
+        today = get_today()
+        records = day_sheet.get_all_records()
+        user_ids = set()
+        for row in records:
+            if str(row.get("Дата")) == today and row.get("Telegram ID"):
+                try:
+                    user_ids.add(int(row["Telegram ID"]))
+                except:
+                    continue
+        return list(user_ids)
+
+    # Telegram ID для одного юзера по Username
+    def get_staff_user_ids_by_username(username):
+        username = str(username).strip().lower()
+        staff_records = staff_sheet.get_all_records()
+        ids = []
+        for r in staff_records:
+            uname = str(r.get("Username", "")).strip().lower()
+            if uname == username and r.get("Telegram ID"):
+                try:
+                    ids.append(int(r["Telegram ID"]))
+                except:
+                    continue
+        return ids
+
+    # Надсилання повідомлень
+    async def send_general_reminder(text, ids):
+        for user_id in ids:
+            try:
+                await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
+            except Exception as e:
+                print(f"[ERROR] Cannot send to user {user_id}: {e}")
+
+    # Створюємо задачі-джоби по кожному нагадуванню з таблиці
+    for row in rows:
+        day = str(row.get('День', '')).strip().lower()
+        time_str = str(row.get('Час', '')).strip()
+        text = str(row.get('Текст', '')).strip()
+        send_all = str(row.get('Загальна розсилка', '')).strip().upper() == "TRUE"
+        send_shift = str(row.get('Розсилка, хто на зміні', '')).strip().upper() == "TRUE"
+        send_individual = str(row.get('Індивідуальна розсилка', '')).strip().upper() == "TRUE"
+        username = str(row.get('Username', '')).strip()
+
+        if not day or not time_str or not text or not (send_all or send_shift or send_individual):
+            continue
+
+        weekday_num = days_map.get(day)
+        if weekday_num is None:
+            continue
+
+        hour, minute = map(int, time_str.split(":"))
+
+        # Визначаємо тип розсилки
+        if send_all:
+            ids_func = get_all_staff_user_ids
+        elif send_shift:
+            ids_func = get_today_users
+        elif send_individual and username:
+            ids_func = lambda: get_staff_user_ids_by_username(username)
+        else:
+            continue
+
+        # Створюємо асинхронну задачу для APScheduler
+        async def job(text=text, ids_func=ids_func):
+            ids = ids_func()
+            await send_general_reminder(text, ids)
+
+        scheduler.add_job(
+            job,
+            'cron',
+            day_of_week=weekday_num,
+            hour=hour,
+            minute=minute,
+            id=f"general-{day}-{hour}-{minute}-{username or 'all'}",
+            replace_existing=True
+        )
     
 # === FSM для створення особистого нагадування ===
 class PersonalReminderState(StatesGroup):
@@ -472,8 +502,8 @@ async def universal_back(message: types.Message, state: FSMContext):
 
 # --- Запуск ---
 async def main():
+    schedule_general_reminders()
     scheduler.start()
-    schedule_global_reminders()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

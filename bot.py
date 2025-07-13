@@ -313,15 +313,12 @@ async def send_general_reminder(text, ids):
             logging.warning(f"Cannot send to user {user_id}: {e}")
 
 def schedule_general_reminders():
-    print(">>> RUNNING schedule_general_reminders")
     rows = general_reminders_sheet.get_all_records()
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
         "четвер": 3, "пʼятниця": 4, "субота": 5, "неділя": 6,
         "пятниця": 4, "п’ятниця": 4
     }
-    loop = asyncio.get_running_loop()
-
     for row in rows:
         day = row.get('День', '').strip().lower()
         time_str = row.get('Час', '').strip()
@@ -335,28 +332,24 @@ def schedule_general_reminders():
             continue
         hour, minute = map(int, time_str.split(":"))
 
-        # Логіка розсилки
+        # Логіка вибору одержувачів
         if send_to_all:
             ids_func = get_all_staff_user_ids
-            func_args = ()
-        elif usernames:
-            ids_func = get_staff_user_ids_by_usernames
-            func_args = (usernames,)
+        elif not send_to_all and usernames:
+            ids_func = lambda: get_staff_user_ids_by_usernames(usernames)
         else:
             ids_func = get_today_users
-            func_args = ()
 
-        async def job(text, ids_func, func_args):
-            ids = ids_func(*func_args)
+        async def job(text=text, ids_func=ids_func):
+            ids = ids_func()
             print(f"== GENERAL REMINDER ==\nText: {text}\nIDs: {ids}")
             await send_general_reminder(text, ids)
 
-        # Всі job плануємо так — через event loop
-        def sync_job(text=text, ids_func=ids_func, func_args=func_args):
-            asyncio.run_coroutine_threadsafe(job(text, ids_func, func_args), loop)
+        def run_async_job():
+            asyncio.get_running_loop().create_task(job())
 
         scheduler.add_job(
-            sync_job,
+            run_async_job,
             'cron',
             day_of_week=weekday_num,
             hour=hour,
@@ -364,6 +357,7 @@ def schedule_general_reminders():
             id=f"general-{day}-{hour}-{minute}",
             replace_existing=True
         )
+        
 # --- Навігаційне меню користувача ---
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):

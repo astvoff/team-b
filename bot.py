@@ -399,8 +399,8 @@ user_menu = types.ReplyKeyboardMarkup(
     keyboard=[
         [types.KeyboardButton(text="Розпочати день")],
         [types.KeyboardButton(text="Список моїх завдань"), types.KeyboardButton(text="Мої нагадування")],
-        [types.KeyboardButton(text="Створити нагадування")],
-        [types.KeyboardButton(text="Інформаційна база"), types.KeyboardButton(text="Завершити день")],
+        [types.KeyboardButton(text="Створити нагадування"), types.KeyboardButton(text="Інформаційна база")],
+        [types.KeyboardButton(text="Завершити день")],
         [types.KeyboardButton(text="Відмінити дію")]
     ],
     resize_keyboard=True

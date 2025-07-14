@@ -453,7 +453,7 @@ async def admin_report_generate(message: types.Message, state: FSMContext):
         sheet = day_sheet
     else:
         try:
-            archive_sheet = f"Архів {date}"
+            archive_sheet = date
             sheet = gs.open_by_key(SHEET_KEY).worksheet(archive_sheet)
         except Exception:
             await message.answer(f"Не знайдено архівний лист для {date}.")

@@ -95,7 +95,7 @@ def copy_template_blocks_to_today(blocks_count):
                 "", "", ""  # Telegram ID, Імʼя, Виконано
             ])
     if new_rows:
-        day_sheet.append_rows(new_rows, value_input_option='USER_ENTERED')
+        prepend_rows_to_sheet(day_sheet, new_rows)
 
 def get_blocks_for_today():
     today = get_today()

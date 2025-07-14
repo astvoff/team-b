@@ -159,11 +159,12 @@ async def notify_admin_if_needed(user_id, row, task, reminder, block):
     value = day_sheet.cell(row, 10).value
     print(f"[DEBUG][notify_admin_if_needed] value={value}")
     if value != "TRUE":
+        name = get_staff_name_by_id(user_id)
         for admin_id in ADMIN_IDS:
             await bot.send_message(
                 admin_id,
                 f"❗️ <b>Завдання НЕ виконано!</b>\n"
-                f"Користувач: {user_id}\n"
+                f"Користувач: {name}\n"
                 f"Блок: {block}\n"
                 f"Завдання: {task}\n"
                 f"Нагадування: {reminder}",

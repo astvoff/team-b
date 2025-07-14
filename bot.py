@@ -362,19 +362,23 @@ async def universal_cancel(message: types.Message, state: FSMContext):
     await message.answer("Дію скасовано.", reply_markup=admin_menu_kb)
 
 def schedule_reminders_for_user(user_id, tasks):
+    print(f"[DEBUG][schedule_reminders_for_user] user_id={user_id}, tasks={tasks}")
     for t in tasks:
+        print(f"[DEBUG][task] {t}")
         if not t["time"]:
             continue
         times = [tm.strip() for tm in t["time"].split(",") if tm.strip()]
         for time_str in times:
             try:
                 remind_time = datetime.strptime(f"{get_today()} {time_str}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
-            except Exception:
+            except Exception as e:
+                print(f"[ERROR][schedule_reminders_for_user] time parse: {e}")
                 continue
             now = now_ua()
             if remind_time <= now:
                 continue
             block = t.get("block") or t.get("Блок") or "?"
+            print(f"[DEBUG][schedule_reminders_for_user] Планується {remind_time} для {user_id}")
             scheduler.add_job(
                 send_reminder,
                 'date',

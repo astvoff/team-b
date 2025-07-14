@@ -479,15 +479,7 @@ async def admin_report_generate(message: types.Message, state: FSMContext):
 
     result = f"<b>Звіт за {date}:</b>\n\n"
     for block, items in sorted(blocks.items(), key=lambda x: int(x[0])):
-        for block, items in sorted(blocks.items(), key=lambda x: int(x[0])):
-    # ...
-    seen_tasks = set()
-    for r in items:
-        task = r.get("Завдання") or ""
-        task_key = task.strip().lower()
-        if task_key in seen_tasks:
-            continue
-        seen_tasks.add(task_key)
+        # визначаємо відповідального (перший, хто є з Telegram ID)
         responsible_id = None
         for r in items:
             if r.get("Telegram ID"):
@@ -499,19 +491,22 @@ async def admin_report_generate(message: types.Message, state: FSMContext):
             name = "—"
         result += f"<b>Блок {block}:</b>\n"
         result += f"Відповідальний: <b>{name}</b>\n"
-        # для кожного завдання — беремо список часів (або один)
+        # показуємо лише унікальні завдання (без дублів)
+        seen_tasks = set()
         for r in items:
             task = r.get("Завдання") or ""
             reminder = r.get("Нагадування") or ""
+            task_key = task.strip().lower()
+            if task_key in seen_tasks:
+                continue
+            seen_tasks.add(task_key)
             times = [tm.strip() for tm in (r.get("Час") or "").split(",") if tm.strip()]
-            # знаходимо всі колонки "Виконано", "Виконано (2)", ...
             status_marks = []
             for idx, tm in enumerate(times):
                 col = "Виконано" if idx == 0 else f"Виконано ({idx+1})"
                 val = (r.get(col) or "").strip().upper()
                 status_marks.append("✅" if val == "TRUE" else "❌")
             if not times:
-                # без часу — перевіряємо просто "Виконано"
                 val = (r.get("Виконано") or "").strip().upper()
                 status_marks.append("✅" if val == "TRUE" else "❌")
             result += f"• <b>{task}</b> | {reminder} {' '.join(status_marks)}\n"

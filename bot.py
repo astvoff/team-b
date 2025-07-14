@@ -629,6 +629,13 @@ async def my_reminders(message: types.Message):
         text += f"— {time}: {reminder} {status}\n"
     await message.answer(text, parse_mode="HTML", reply_markup=user_menu)
 
+@dp.callback_query(lambda c: c.data.startswith("task_done_"))
+async def task_done_callback(call: types.CallbackQuery):
+    row = int(call.data.split("_")[-1])
+    mark_task_done(row)
+    await call.message.edit_text(call.message.text + "\n\n✅ Позначено як виконане.", reply_markup=None)
+    await call.answer("Завдання виконано!")
+
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 @dp.message(lambda msg: msg.text and msg.text.lower() == "інформаційна база")
@@ -706,11 +713,9 @@ async def select_block(message: types.Message):
         await message.answer("Завдань не знайдено для цього блоку.", reply_markup=user_menu)
         return
     for t in tasks:
-        row_idx = t["row"]
-        task = t["task"]
-        desc = t.get("desc") or t.get("Опис") or ""
-        status = (t.get("done", "").strip().upper() == "TRUE")
-        await send_task_to_user(user_id, t, task, desc, status, row_idx)
+        desc = t.get("Опис") or ""
+        done = (t.get("done", "").strip().upper() == "TRUE")
+        await send_task_with_status(user_id, t["task"], desc, done, t["row"])
 
 @dp.callback_query(F.data.startswith('done_task_'))
 async def done_task_callback(call: types.CallbackQuery):
@@ -724,6 +729,19 @@ async def done_task_callback(call: types.CallbackQuery):
 async def universal_back(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("⬅️ Повернулись до головного меню.", reply_markup=user_menu)
+
+async def send_task_with_status(user_id, task, desc, done, row):
+    status = "✅" if done else "❌"
+    text = f"<b>Завдання:</b> {task}\n"
+    if desc:
+        text += f"<b>Опис:</b> {desc}\n"
+    text += f"<b>Статус:</b> {status}"
+    kb = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text="✅ Виконано", callback_data=f"task_done_{row}")]
+        ]
+    )
+    await bot.send_message(user_id, text, reply_markup=kb, parse_mode="HTML")
 
 # --- Опитування --- #
 @dp.message(lambda m: m.text and m.text.strip().lower() == "створити опитування")

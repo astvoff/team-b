@@ -11,10 +11,6 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from datetime import datetime, timedelta, timezone
 
 class ReminderFSM(StatesGroup):
     wait_text = State()

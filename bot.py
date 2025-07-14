@@ -108,6 +108,7 @@ def get_tasks_for_block(block_num, user_id=None):
             "row": idx + 2,
             "task": row["Завдання"],
             "reminder": row["Нагадування"],
+            "desc": row.get("Опис", ""),
             "time": row["Час"],
             "done": row.get("Виконано", ""),
             "block": row["Блок"]
@@ -573,12 +574,32 @@ async def my_tasks(message: types.Message):
     today = get_today()
     records = day_sheet.get_all_records()
     my_tasks = [
-        row for row in records
+        (i+2, row) for i, row in enumerate(records)
         if str(row.get("Дата")) == today and str(row.get("Telegram ID")) == str(user_id)
     ]
     if not my_tasks:
         await message.answer("У вас немає завдань на сьогодні.", reply_markup=user_menu)
         return
+    for row_idx, row in my_tasks:
+        task = row.get("Завдання") or ""
+        desc = row.get("Опис") or ""
+        status = (row.get("Виконано", "").strip().upper() == "TRUE")
+        await send_task_to_user(user_id, row, task, desc, status, row_idx)
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+async def send_task_to_user(user_id, row, task, desc, status, row_idx):
+    status_text = "✅ Виконано" if status else "❌ Не виконано"
+    kb = None
+    if not status:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Виконано", callback_data=f"done_task_{row_idx}")]
+        ])
+    msg = f"<b>Завдання:</b> {task}\n"
+    if desc:
+        msg += f"<b>Опис:</b> {desc}\n"
+    msg += f"<b>Статус:</b> {status_text}"
+    await bot.send_message(user_id, msg, parse_mode="HTML", reply_markup=kb)
 
     text = "<b>Ваші завдання на сьогодні:</b>\n"
     for row in my_tasks:
@@ -680,17 +701,24 @@ async def select_block(message: types.Message):
                 await message.answer("Цей блок вже зайнятий іншим працівником.", reply_markup=user_menu)
                 return
     await assign_user_to_block(block_num, user_id)
-    await message.answer(f"Супер! Твої нагадування на сьогодні в блоці {block_num} 👇", reply_markup=user_menu)
     tasks = get_tasks_for_block(block_num, user_id)
     if not tasks:
         await message.answer("Завдань не знайдено для цього блоку.", reply_markup=user_menu)
         return
-    tasks_text = "\n".join([f"— {t['time']}: {t['reminder']}" for t in tasks if t["time"]])
-    await message.answer(
-        f"Я буду нагадувати тобі про кожне завдання у потрібний час. Ось твій список нагадувань:\n\n{tasks_text}",
-        reply_markup=user_menu
-    )
-    schedule_reminders_for_user(user_id, tasks)
+    for t in tasks:
+        row_idx = t["row"]
+        task = t["task"]
+        desc = t.get("desc") or t.get("Опис") or ""
+        status = (t.get("done", "").strip().upper() == "TRUE")
+        await send_task_to_user(user_id, t, task, desc, status, row_idx)
+
+@dp.callback_query(F.data.startswith('done_task_'))
+async def done_task_callback(call: types.CallbackQuery):
+    row_idx = int(call.data.split('_')[-1])
+    # Оновлюємо стовпчик "Виконано" (10-та колонка, J)
+    day_sheet.update_cell(row_idx, 10, "TRUE")
+    await call.message.edit_text(call.message.text.replace("❌ Не виконано", "✅ Виконано"), parse_mode="HTML")
+    await call.answer("Завдання відмічено як виконане ✅")
 
 @dp.message(StateFilter('*'), F.text == "Відмінити дію")
 async def universal_back(message: types.Message, state: FSMContext):

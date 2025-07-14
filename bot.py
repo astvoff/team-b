@@ -735,6 +735,7 @@ async def select_block(message: types.Message):
         desc = t.get("desc") or ""
         done = (t.get("done", "").strip().upper() == "TRUE")
         await send_task_with_status(user_id, t["task"], desc, done, t["row"])
+    await message.answer("⬅️ Повернулись до головного меню.", reply_markup=user_menu)
 
 @dp.callback_query(F.data.startswith('task_done_'))
 async def mark_task_done_callback(call: types.CallbackQuery):

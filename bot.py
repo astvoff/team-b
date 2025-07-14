@@ -598,7 +598,7 @@ async def my_tasks(message: types.Message):
         status = "✅" if done else "❌ Не виконано"
         text = f"<b>Завдання:</b> {task}\n"
         if desc:
-    text += f"<b>Зона відповідальності:</b> {desc}\n"
+        text += f"<b>Зона відповідальності:</b> {desc}\n"
         text += f"<b>Статус:</b> {status}"
         kb = types.InlineKeyboardMarkup(
             inline_keyboard=[

@@ -11,18 +11,6 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
-main_loop = None
-from aiogram.fsm.state import State, StatesGroup
-
-
-class AdminReminderFSM(StatesGroup):
-    wait_type = State()
-    wait_nick = State()
-    wait_day = State()
-    wait_time = State()
-    wait_text = State()
-    wait_repeat = State()
-    wait_confirm = State()
 
 # --- Константи ---
 load_dotenv()
@@ -49,46 +37,19 @@ information_base_sheet = gs.open_by_key(SHEET_KEY).worksheet(INFORMATION_BASE_SH
 staff_sheet = gs.open_by_key(SHEET_KEY).worksheet(STAFF_SHEET)
 general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
 
-
-# --- Telegram бот ---
+# --- Telegram bot ---
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 scheduler = AsyncIOScheduler(timezone=UA_TZ)
 user_sessions = {}
 
-# --- Reply клавіатури ---
-user_menu = types.ReplyKeyboardMarkup(
-    keyboard=[
-        [types.KeyboardButton(text="Розпочати день")],
-        [types.KeyboardButton(text="Список моїх завдань"), types.KeyboardButton(text="Створити нагадування")],
-        [types.KeyboardButton(text="Інформаційна база"), types.KeyboardButton(text="Завершити день")],
-        [types.KeyboardButton(text="Відмінити дію")]
-    ],
-    resize_keyboard=True
-)
-
-admin_menu_kb = types.ReplyKeyboardMarkup(
-    keyboard=[
-        [types.KeyboardButton(text="📋 Завдання на день")],
-        [types.KeyboardButton(text="➕ Додати нагадування")],
-        [types.KeyboardButton(text="👁 Контроль виконання")],
-        [types.KeyboardButton(text="🔄 Розблокувати блок")],
-        [types.KeyboardButton(text="➕ Додати завдання у шаблон")],
-        [types.KeyboardButton(text="✏️ Редагувати завдання")],
-        [types.KeyboardButton(text="🛠 Інші налаштування")],
-        [types.KeyboardButton(text="⬅️ Вихід до користувача")]
-    ],
-    resize_keyboard=True
-)
-
-# --- Сервісні функції ---
 def now_ua():
     return datetime.now(timezone.utc).astimezone(UA_TZ)
 
 def get_today():
     return now_ua().strftime('%Y-%m-%d')
 
-def is_true(val):           # <-- Ось тут
+def is_true(val):
     if isinstance(val, bool):
         return val is True
     if isinstance(val, str):
@@ -121,7 +82,7 @@ def get_blocks_for_today():
 def get_tasks_for_block(block_num, user_id=None):
     today = get_today()
     records = day_sheet.get_all_records()
-    return [
+    tasks = [
         {
             "row": idx + 2,
             "task": row["Завдання"],
@@ -131,9 +92,10 @@ def get_tasks_for_block(block_num, user_id=None):
             "block": row["Блок"]
         }
         for idx, row in enumerate(records)
-        if str(row["Дата"]) == today and str(row["Блок"]) == str(block_num)
-        and (user_id is None or str(row.get("Telegram ID")) == str(user_id))
+        if str(row.get("Дата")) == today and str(row.get("Блок")) == str(block_num)
+           and (user_id is None or str(row.get("Telegram ID")) == str(user_id))
     ]
+    return tasks
 
 async def assign_user_to_block(block_num, user_id):
     today = get_today()
@@ -149,7 +111,6 @@ async def assign_user_to_block(block_num, user_id):
 def mark_task_done(row):
     day_sheet.update_cell(row, 10, "TRUE")
 
-# --- Inline-нагадування для задач ---
 async def send_reminder(user_id, task, reminder, row):
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
@@ -175,210 +136,20 @@ async def done_callback(call: types.CallbackQuery):
     )
     await call.answer("Відмічено як виконане ✅")
 
-# --- Повторне нагадування і повідомлення адміну ---
-async def repeat_reminder_if_needed(user_id, row, task, reminder, block):
-    value = day_sheet.cell(row, 10).value
-    if value != "TRUE":
-        await bot.send_message(
-            user_id,
-            f"⏰ Завдання досі не виконано:\n\n"
-            f"Блок {block}\n"
-            f"Завдання: {task}\n"
-            f"Нагадування: {reminder}\n\n"
-            f"Не забудь натиснути «✅ Виконано»!",
-            reply_markup=user_menu
-        )
-
-async def notify_admin_if_needed(user_id, row, task, reminder, block):
-    value = day_sheet.cell(row, 10).value
-    if value != "TRUE":
-        try:
-            user = await bot.get_chat(user_id)
-            username = user.username or user.full_name or str(user_id)
-        except Exception:
-            username = str(user_id)
-        for admin_id in ADMIN_IDS:
-            await bot.send_message(
-                admin_id,
-                f"❗️ <b>Завдання НЕ виконано!</b>\n"
-                f"Користувач: @{username} (ID: {user_id})\n"
-                f"Блок: {block}\n"
-                f"Завдання: {task}\n"
-                f"Нагадування: {reminder}",
-                parse_mode="HTML"
-            )
-
-DAYS = [
-    "понеділок", "вівторок", "середа",
-    "четвер", "пʼятниця", "субота", "неділя"
-]
-
-@dp.message(F.text == "➕ Додати нагадування")
-async def admin_create_reminder(message: types.Message, state: FSMContext):
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("⛔️ Тільки для адміністратора")
-        return
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[
-            [types.KeyboardButton(text="Загальне"), types.KeyboardButton(text="Для зміни")],
-            [types.KeyboardButton(text="Індивідуальне")],
-            [types.KeyboardButton(text="Відміна")]
-        ], resize_keyboard=True
-    )
-    await message.answer("Виберіть тип нагадування:", reply_markup=kb)
-    await state.set_state(AdminReminderFSM.wait_type)
-
-@dp.message(AdminReminderFSM.wait_type)
-async def reminder_type_chosen(message: types.Message, state: FSMContext):
-    if message.text == "Відміна":
-        await state.clear()
-        await message.answer("Дію скасовано.", reply_markup=admin_menu_kb)
-        return
-    data = {"type": message.text}
-    await state.update_data(**data)
-    if message.text == "Індивідуальне":
-        await message.answer("Введіть нікнейм користувача (без @):", reply_markup=types.ReplyKeyboardRemove())
-        await state.set_state(AdminReminderFSM.wait_nick)
-    else:
-        await ask_day(message, state)
-
-@dp.message(AdminReminderFSM.wait_nick)
-async def reminder_nick_chosen(message: types.Message, state: FSMContext):
-    await state.update_data(username=message.text.strip())
-    await ask_day(message, state)
-
-async def ask_day(message, state):
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[[types.KeyboardButton(text=day.title())] for day in DAYS] + [[types.KeyboardButton(text="Відміна")]],
-        resize_keyboard=True
-    )
-    await message.answer("Виберіть день:", reply_markup=kb)
-    await state.set_state(AdminReminderFSM.wait_day)
-
-@dp.message(AdminReminderFSM.wait_day)
-async def reminder_day_chosen(message: types.Message, state: FSMContext):
-    if message.text == "Відміна":
-        await state.clear()
-        await message.answer("Дію скасовано.", reply_markup=admin_menu_kb)
-        return
-    if message.text.lower() not in DAYS:
-        await message.answer("Будь ласка, оберіть день із клавіатури.")
-        return
-    await state.update_data(day=message.text.lower())
-    await message.answer("Введіть час у форматі ГГ:ХХ (наприклад, 13:30):", reply_markup=types.ReplyKeyboardRemove())
-    await state.set_state(AdminReminderFSM.wait_time)
-
-@dp.message(AdminReminderFSM.wait_time)
-async def reminder_time_chosen(message: types.Message, state: FSMContext):
-    time_str = message.text.strip()
-    try:
-        _ = datetime.strptime(time_str, "%H:%M")
-    except Exception:
-        await message.answer("Невірний формат часу. Введіть у форматі ГГ:ХХ (наприклад, 09:25):")
-        return
-    await state.update_data(time=time_str)
-    await message.answer("Введіть текст нагадування:")
-    await state.set_state(AdminReminderFSM.wait_text)
-
-@dp.message(AdminReminderFSM.wait_text)
-async def reminder_text_chosen(message: types.Message, state: FSMContext):
-    await state.update_data(text=message.text)
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[
-            [types.KeyboardButton(text="Щотижня"), types.KeyboardButton(text="Одноразове")],
-            [types.KeyboardButton(text="Відміна")]
-        ], resize_keyboard=True
-    )
-    await message.answer("Оберіть повторюваність:", reply_markup=kb)
-    await state.set_state(AdminReminderFSM.wait_repeat)
-
-@dp.message(AdminReminderFSM.wait_repeat)
-async def reminder_repeat_chosen(message: types.Message, state: FSMContext):
-    if message.text == "Відміна":
-        await state.clear()
-        await message.answer("Дію скасовано.", reply_markup=admin_menu_kb)
-        return
-    if message.text not in ["Щотижня", "Одноразове"]:
-        await message.answer("Оберіть варіант із клавіатури.")
-        return
-    await state.update_data(repeat=message.text)
-    data = await state.get_data()
-    confirm_text = (
-        f"<b>Підтвердіть створення нагадування:</b>\n"
-        f"Тип: <b>{data.get('type')}</b>\n"
-        f"{'Нік: @' + data['username'] if data.get('username') else ''}\n"
-        f"День: <b>{data['day'].title()}</b>\n"
-        f"Час: <b>{data['time']}</b>\n"
-        f"Текст: <b>{data['text']}</b>\n"
-        f"Повтор: <b>{data['repeat']}</b>\n\n"
-        "Підтвердити створення?"
-    )
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[
-            [types.KeyboardButton(text="Підтвердити"), types.KeyboardButton(text="Відміна")]
-        ], resize_keyboard=True
-    )
-    await message.answer(confirm_text, reply_markup=kb, parse_mode="HTML")
-    await state.set_state(AdminReminderFSM.wait_confirm)
-
-@dp.message(AdminReminderFSM.wait_confirm)
-async def reminder_confirmed(message: types.Message, state: FSMContext):
-    if message.text == "Відміна":
-        await state.clear()
-        await message.answer("Дію скасовано.", reply_markup=admin_menu_kb)
-        return
-
-    data = await state.get_data()
-    row = [
-        data.get('day', ''),
-        data.get('time', ''),
-        data.get('text', ''),
-        "TRUE" if data['type'] == "Загальне" else "",
-        "TRUE" if data['type'] == "Для зміни" else "",
-        "TRUE" if data['type'] == "Індивідуальне" else "",
-        data.get('username', ''),
-        data.get('repeat', ''),
-    ]
-    print(f"[DEBUG][append_row] row={row}")
-    print(f"[DEBUG][sheet name] {general_reminders_sheet.title}")
-    try:
-        general_reminders_sheet.append_row(row, value_input_option='USER_ENTERED')
-        print("[DEBUG][append_row] Успішно додано")
-        
-        # --- Оновлюємо всі задачі планувальника:
-        scheduler.remove_all_jobs()
-        schedule_general_reminders(main_loop)
-        print("[DEBUG][scheduler] Планувальник оновлено!")
-
-        await message.answer("✅ Нагадування успішно створено!", reply_markup=admin_menu_kb)
-    except Exception as e:
-        print(f"[ERROR][append_row] {e}")
-        await message.answer(f"❌ Помилка при додаванні у таблицю: {e}", reply_markup=admin_menu_kb)
-    await state.clear()
-
-@dp.message(StateFilter('*'), F.text == "Відміна")
-async def universal_cancel(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer("Дію скасовано.", reply_markup=admin_menu_kb)
-
 def schedule_reminders_for_user(user_id, tasks):
-    print(f"[DEBUG][schedule_reminders_for_user] user_id={user_id}, tasks={tasks}")
     for t in tasks:
-        print(f"[DEBUG][task] {t}")
         if not t["time"]:
             continue
         times = [tm.strip() for tm in t["time"].split(",") if tm.strip()]
         for time_str in times:
             try:
                 remind_time = datetime.strptime(f"{get_today()} {time_str}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
-            except Exception as e:
-                print(f"[ERROR][schedule_reminders_for_user] time parse: {e}")
+            except Exception:
                 continue
             now = now_ua()
             if remind_time <= now:
                 continue
             block = t.get("block") or t.get("Блок") or "?"
-            print(f"[DEBUG][schedule_reminders_for_user] Планується {remind_time} для {user_id}")
             scheduler.add_job(
                 send_reminder,
                 'date',
@@ -387,145 +158,64 @@ def schedule_reminders_for_user(user_id, tasks):
                 id=f"{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
                 replace_existing=True
             )
-            scheduler.add_job(
-                repeat_reminder_if_needed,
-                'date',
-                run_date=remind_time + timedelta(minutes=REMINDER_REPEAT_MINUTES),
-                args=[user_id, t["row"], t["task"], t["reminder"], block],
-                id=f"repeat-{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
-                replace_existing=True
-            )
-            scheduler.add_job(
-                notify_admin_if_needed,
-                'date',
-                run_date=remind_time + timedelta(minutes=ADMIN_NOTIFY_MINUTES),
-                args=[user_id, t["row"], t["task"], t["reminder"], block],
-                id=f"admin-{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
-                replace_existing=True
-            )
 
-# === FSM для створення особистого нагадування ===
-class PersonalReminderState(StatesGroup):
-    wait_text = State()
-    wait_time = State()
-
-@dp.message(F.text == "Створити нагадування")
-async def create_reminder_start(message: types.Message, state: FSMContext):
-    await message.answer("Введіть текст нагадування:")
-    await state.set_state(PersonalReminderState.wait_text)
-
-@dp.message(PersonalReminderState.wait_text)
-async def reminder_got_text(message: types.Message, state: FSMContext):
-    await state.update_data(text=message.text)
-    await message.answer("Введіть час нагадування у форматі ГГ:ХХ (наприклад, 15:30):")
-    await state.set_state(PersonalReminderState.wait_time)
-
-@dp.message(PersonalReminderState.wait_time)
-async def reminder_got_time(message: types.Message, state: FSMContext):
-    time_str = message.text.strip()
-    try:
-        remind_time = datetime.strptime(f"{get_today()} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=UA_TZ)
-        if remind_time < now_ua():
-            await message.answer("Цей час вже минув. Введіть час у майбутньому.")
-            return
-    except Exception:
-        await message.answer("Некоректний формат. Введіть ще раз у форматі ГГ:ХХ (наприклад, 09:25):")
-        return
-    data = await state.get_data()
-    text = data.get("text")
-    user_id = message.from_user.id
-
-    async def send_personal_reminder():
-        await bot.send_message(user_id, f"🔔 <b>Ваше особисте нагадування</b>:\n{text}", parse_mode="HTML")
-
-    scheduler.add_job(
-        send_personal_reminder,
-        trigger="date",
-        run_date=remind_time,
-        id=f"personal-{user_id}-{int(remind_time.timestamp())}",
-        replace_existing=False
-    )
-    await message.answer(f"Нагадування створено на {time_str}!\n\nТекст: {text}", reply_markup=user_menu)
-    await state.clear()
-
-import logging
-
+# --- Загальні нагадування (розсилка) ---
 def get_all_staff_user_ids():
-    print("[DEBUG][get_all_staff_user_ids] старт")
     ids = []
     try:
         all_records = staff_sheet.get_all_records()
-        print(f"[DEBUG][get_all_staff_user_ids] staff_sheet rows: {len(all_records)}")
         for r in all_records:
-            print(f"[DEBUG][get_all_staff_user_ids] row: {r}")
             try:
                 user_id = int(str(r.get("Telegram ID", "")).strip())
                 if user_id:
                     ids.append(user_id)
-            except Exception as e:
-                print(f"[DEBUG][get_all_staff_user_ids] Exception: {e}")
+            except:
+                pass
     except Exception as e:
-        print(f"[ERROR][get_all_staff_user_ids] Exception: {e}")
-    print(f"[DEBUG][get_all_staff_user_ids] Result: {ids}")
+        print(f"[ERROR][get_all_staff_user_ids] {e}")
     return ids
 
 def get_today_users():
-    print("[DEBUG][get_today_users] старт")
     today = get_today()
     user_ids = set()
     try:
         rows = day_sheet.get_all_records()
-        print(f"[DEBUG][get_today_users] day_sheet rows: {len(rows)}")
         for row in rows:
-            print(f"[DEBUG][general loop] row: {row}")
-            print(f"[DEBUG][flags] Загальна: {is_true(row.get('Загальна', ''))}, Хто на зміні: {is_true(row.get('Розсилка, хто на зміні', ''))}, Індивід: {is_true(row.get('Індивідуальна розсилка', ''))}")
             if str(row.get("Дата")) == today and row.get("Telegram ID"):
                 try:
                     user_ids.add(int(row["Telegram ID"]))
-                except Exception as e:
-                    print(f"[DEBUG][get_today_users] Exception: {e}")
+                except:
+                    pass
     except Exception as e:
-        print(f"[ERROR][get_today_users] Exception: {e}")
-    print(f"[DEBUG][get_today_users] Result: {user_ids}")
+        print(f"[ERROR][get_today_users] {e}")
     return list(user_ids)
 
 def get_staff_user_ids_by_username(username):
-    print(f"[DEBUG][get_staff_user_ids_by_username] старт з username='{username}'")
     username = str(username).strip().lstrip('@').lower()
     ids = []
     try:
         all_records = staff_sheet.get_all_records()
-        print(f"[DEBUG][get_staff_user_ids_by_username] staff_sheet rows: {len(all_records)}")
         for r in all_records:
             uname = str(r.get("Username", "")).strip().lstrip('@').lower()
-            print(f"[DEBUG][get_staff_user_ids_by_username] row uname: '{uname}'")
             if uname == username and r.get("Telegram ID"):
                 try:
                     ids.append(int(r["Telegram ID"]))
-                    print(f"[DEBUG][get_staff_user_ids_by_username] MATCH {uname} == {username} -> {r['Telegram ID']}")
-                except Exception as e:
-                    print(f"[DEBUG][get_staff_user_ids_by_username] Exception: {e}")
+                except:
+                    pass
     except Exception as e:
-        print(f"[ERROR][get_staff_user_ids_by_username] Exception: {e}")
-    print(f"[DEBUG][get_staff_user_ids_by_username] Result: {ids}")
+        print(f"[ERROR][get_staff_user_ids_by_username] {e}")
     return ids
 
 async def send_general_reminder(text, ids):
-    print(f"[DEBUG][send_general_reminder] IDs для розсилки: {ids}, text: {text}")
-    if not ids:
-        print("[WARNING][send_general_reminder] IDs порожні, розсилка не відправлена!")
     for user_id in ids:
         try:
-            print(f"[DEBUG][send_general_reminder] Надсилаємо {user_id}")
             await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
         except Exception as e:
             print(f"[ERROR][send_general_reminder] Cannot send to user {user_id}: {e}")
 
 def schedule_general_reminders(main_loop):
-    print("[DEBUG][schedule_general_reminders] старт")
     try:
         rows = general_reminders_sheet.get_all_records()
-        print(f"[DEBUG][schedule_general_reminders] general_reminders_sheet rows: {len(rows)}")
     except Exception as e:
         print(f"[ERROR][schedule_general_reminders] Exception при get_all_records: {e}")
         rows = []
@@ -536,55 +226,38 @@ def schedule_general_reminders(main_loop):
     }
 
     def run_async_job(text, ids_func):
-        print(f"[DEBUG][run_async_job] Викликається з text='{text}', ids_func={ids_func}")
         try:
             ids = ids_func()
-            print(f"[DEBUG][run_async_job] IDs для надсилання: {ids}")
             asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids), main_loop)
         except Exception as e:
             print(f"[ERROR][run_async_job] Exception: {e}")
 
     for row in rows:
-        if not any(row.values()):
-            continue  # Пропустити повністю порожній рядок
-        print(f"[DEBUG][general loop] row: {row}")
         day = str(row.get('День', '')).strip().lower()
         time_str = str(row.get('Час', '')).strip()
         text = str(row.get('Текст', '')).strip()
-        send_all = str(row.get('Загальна', '')).strip().upper() == "TRUE"
-        send_shift = str(row.get('Розсилка, хто на зміні', '')).strip().upper() == "TRUE"
-        send_individual = str(row.get('Індивідуальна розсилка', '')).strip().upper() == "TRUE"
+        send_all = is_true(row.get('Загальна', ''))
+        send_shift = is_true(row.get('Розсилка, хто на зміні', ''))
+        send_individual = is_true(row.get('Індивідуальна розсилка', ''))
         username = str(row.get('Username', '')).strip()
-
-        print(f"[DEBUG][general loop] send_all={send_all}, send_shift={send_shift}, send_individual={send_individual}")
-
         if not day or not time_str or not text or not (send_all or send_shift or send_individual):
-            print("[DEBUG][general loop] Пропущено через відсутність обовʼязкових даних")
             continue
         weekday_num = days_map.get(day)
         if weekday_num is None:
-            print(f"[DEBUG][general loop] Пропущено — невірний день {day}")
             continue
         try:
             hour, minute = map(int, time_str.split(":"))
         except Exception as e:
-            print(f"[ERROR][general loop] Exception при split time: {e}")
             continue
-
         if send_all:
-            print("[DEBUG][general loop] ВІДПРАВКА ВСІМ!")
             ids_func = get_all_staff_user_ids
         elif send_shift:
-            print("[DEBUG][general loop] ВІДПРАВКА тим, хто на зміні!")
             ids_func = get_today_users
         elif send_individual and username:
-            print(f"[DEBUG][general loop] ВІДПРАВКА користувачу username={username}")
             _username = username
             ids_func = lambda _username=_username: get_staff_user_ids_by_username(_username)
         else:
-            print("[DEBUG][general loop] Пропущено через невідповідність умовам розсилки")
             continue
-
         try:
             scheduler.add_job(
                 run_async_job,
@@ -596,11 +269,33 @@ def schedule_general_reminders(main_loop):
                 id=f"general-{day}-{hour}-{minute}-{username or 'all'}",
                 replace_existing=True
             )
-            print(f"[DEBUG][schedule_general_reminders] Додано задачу: {day=} {time_str=} {text=} {ids_func=}")
         except Exception as e:
             print(f"[ERROR][schedule_general_reminders] Exception при add_job: {e}")
-            
-# --- Навігаційне меню користувача ---
+
+# --- Меню ---
+user_menu = types.ReplyKeyboardMarkup(
+    keyboard=[
+        [types.KeyboardButton(text="Розпочати день")],
+        [types.KeyboardButton(text="Список моїх завдань"), types.KeyboardButton(text="Створити нагадування")],
+        [types.KeyboardButton(text="Інформаційна база"), types.KeyboardButton(text="Завершити день")],
+        [types.KeyboardButton(text="Відмінити дію")]
+    ],
+    resize_keyboard=True
+)
+
+admin_menu_kb = types.ReplyKeyboardMarkup(
+    keyboard=[
+        [types.KeyboardButton(text="📋 Завдання на день")],
+        [types.KeyboardButton(text="👁 Контроль виконання")],
+        [types.KeyboardButton(text="🔄 Розблокувати блок")],
+        [types.KeyboardButton(text="➕ Додати завдання у шаблон")],
+        [types.KeyboardButton(text="✏️ Редагувати завдання")],
+        [types.KeyboardButton(text="🛠 Інші налаштування")],
+        [types.KeyboardButton(text="⬅️ Вихід до користувача")]
+    ],
+    resize_keyboard=True
+)
+
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):
     await message.answer(
@@ -714,7 +409,7 @@ async def select_block(message: types.Message):
                 return
     await assign_user_to_block(block_num, user_id)
     await message.answer(f"Супер! Твої нагадування на сьогодні в блоці {block_num} 👇", reply_markup=user_menu)
-    tasks = get_tasks_for_block(block_num)
+    tasks = get_tasks_for_block(block_num, user_id)
     if not tasks:
         await message.answer("Завдань не знайдено для цього блоку.", reply_markup=user_menu)
         return

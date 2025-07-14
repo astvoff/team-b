@@ -16,12 +16,14 @@ class ReminderFSM(StatesGroup):
     wait_text = State()
     wait_time = State()
 
-class PollCreateState(StatesGroup):
-    question = State()
-    options = State()
-    audience = State()
-    poll_type = State()
-    waiting = State()
+class PollState(StatesGroup):
+    wait_type = State()
+    wait_title = State()
+    wait_options = State()
+    wait_recipients = State()
+    wait_username = State()
+    wait_day = State()
+    wait_time = State()
     
 # --- Константи ---
 load_dotenv()
@@ -42,11 +44,13 @@ DAY_SHEET = 'Завдання на день'
 INFORMATION_BASE_SHEET = 'Інформаційна база'
 STAFF_SHEET = "Штат"
 GENERAL_REMINDERS_SHEET = 'Загальні нагадування'
+POLL_SHEET = 'Опитування'
 template_sheet = gs.open_by_key(SHEET_KEY).worksheet(TEMPLATE_SHEET)
 day_sheet = gs.open_by_key(SHEET_KEY).worksheet(DAY_SHEET)
 information_base_sheet = gs.open_by_key(SHEET_KEY).worksheet(INFORMATION_BASE_SHEET)
 staff_sheet = gs.open_by_key(SHEET_KEY).worksheet(STAFF_SHEET)
 general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
+poll_sheet = gs.open_by_key(SHEET_KEY).worksheet(POLL_SHEET)
 
 # --- Telegram bot ---
 bot = Bot(token=BOT_TOKEN)
@@ -505,147 +509,219 @@ async def universal_back(message: types.Message, state: FSMContext):
     await message.answer("⬅️ Повернулись до головного меню.", reply_markup=user_menu)
 
 # --- Опитування --- #
-@dp.message(Command("створити_опитування"))
-async def start_poll_create(message: types.Message, state: FSMContext):
+@dp.message(CommandStart())
+async def start_cmd(message: types.Message):
+    await message.answer("Вітаю! Для створення опитування введіть /poll")
+
+@dp.message(F.text == "/poll")
+async def poll_start(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
-        await message.answer("⛔️ Лише для адміністратора.")
+        await message.answer("⛔️ Доступ лише для адміністратора.")
         return
-    await message.answer("Введіть питання опитування:")
-    await state.set_state(PollCreateState.question)
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=[
+            [types.KeyboardButton(text="Radio-кнопки (1 відповідь)"), types.KeyboardButton(text="Checkbox (декілька відповідей)")],
+        ], resize_keyboard=True
+    )
+    await message.answer("Оберіть тип опитування:", reply_markup=kb)
+    await state.set_state(PollState.wait_type)
 
-@dp.message(PollCreateState.question)
-async def poll_get_question(message: types.Message, state: FSMContext):
-    await state.update_data(question=message.text)
-    await message.answer("Введіть варіанти відповідей через кому (напр. Так, Ні, Не знаю):")
-    await state.set_state(PollCreateState.options)
+@dp.message(PollState.wait_type)
+async def poll_get_type(message: types.Message, state: FSMContext):
+    poll_type = "radio" if "radio" in message.text.lower() else "checkbox"
+    await state.update_data(poll_type=poll_type)
+    await message.answer("Введіть назву опитування:", reply_markup=types.ReplyKeyboardRemove())
+    await state.set_state(PollState.wait_title)
 
-@dp.message(PollCreateState.options)
+@dp.message(PollState.wait_title)
+async def poll_get_title(message: types.Message, state: FSMContext):
+    await state.update_data(title=message.text.strip())
+    await message.answer("Введіть варіанти відповідей через кому (напр. Так, Ні, Можливо):")
+    await state.set_state(PollState.wait_options)
+
+@dp.message(PollState.wait_options)
 async def poll_get_options(message: types.Message, state: FSMContext):
-    options = [opt.strip() for opt in message.text.split(",") if opt.strip()]
-    if not (2 <= len(options) <= 10):
-        await message.answer("Потрібно від 2 до 10 варіантів.")
+    options = [x.strip() for x in message.text.split(",") if x.strip()]
+    if len(options) < 2:
+        await message.answer("Введіть хоча б два варіанти.")
         return
     await state.update_data(options=options)
     kb = types.ReplyKeyboardMarkup(
         keyboard=[
             [types.KeyboardButton(text="Всім зі штату")],
-            [types.KeyboardButton(text="Тим хто на зміні")],
-            [types.KeyboardButton(text="Конкретному юзеру")]
-        ], resize_keyboard=True, one_time_keyboard=True
+            [types.KeyboardButton(text="Тим, хто на зміні")],
+            [types.KeyboardButton(text="Індивідуально (за username)")]
+        ], resize_keyboard=True
     )
-    await message.answer("Кому надіслати опитування?", reply_markup=kb)
-    await state.set_state(PollCreateState.audience)
+    await message.answer("Кому відправити опитування?", reply_markup=kb)
+    await state.set_state(PollState.wait_recipients)
 
-@dp.message(PollCreateState.audience)
-async def poll_get_audience(message: types.Message, state: FSMContext):
-    audience = message.text.lower()
-    if audience == "конкретному юзеру":
-        await message.answer("Введіть username (без @):", reply_markup=types.ReplyKeyboardRemove())
+@dp.message(PollState.wait_recipients)
+async def poll_get_recipients(message: types.Message, state: FSMContext):
+    txt = message.text.lower()
+    if "індивідуально" in txt:
+        await message.answer("Вкажіть username користувача (без @):", reply_markup=types.ReplyKeyboardRemove())
+        await state.set_state(PollState.wait_username)
     else:
-        await state.update_data(audience=audience)
-        kb = types.ReplyKeyboardMarkup(
-            keyboard=[
-                [types.KeyboardButton(text="Одна відповідь")],
-                [types.KeyboardButton(text="Кілька відповідей")]
-            ], resize_keyboard=True, one_time_keyboard=True
-        )
-        await message.answer("Оберіть тип опитування:", reply_markup=kb)
-        await state.set_state(PollCreateState.poll_type)
-        return
-    await state.update_data(audience=audience)
-    await state.set_state(PollCreateState.waiting)
+        await state.update_data(recipients=txt)
+        await message.answer("Вкажіть день тижня (наприклад, понеділок):")
+        await state.set_state(PollState.wait_day)
 
-@dp.message(PollCreateState.waiting)
+@dp.message(PollState.wait_username)
 async def poll_get_username(message: types.Message, state: FSMContext):
-    username = message.text.strip().lstrip("@")
-    await state.update_data(username=username)
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[
-            [types.KeyboardButton(text="Одна відповідь")],
-            [types.KeyboardButton(text="Кілька відповідей")]
-        ], resize_keyboard=True, one_time_keyboard=True
-    )
-    await message.answer("Оберіть тип опитування:", reply_markup=kb)
-    await state.set_state(PollCreateState.poll_type)
+    username = message.text.strip().lstrip('@')
+    await state.update_data(username=username, recipients="індивідуально")
+    await message.answer("Вкажіть день тижня (наприклад, понеділок):")
+    await state.set_state(PollState.wait_day)
 
-@dp.message(PollCreateState.poll_type)
-async def poll_send_poll(message: types.Message, state: FSMContext):
+@dp.message(PollState.wait_day)
+async def poll_get_day(message: types.Message, state: FSMContext):
+    await state.update_data(day=message.text.strip().lower())
+    await message.answer("Вкажіть час опитування у форматі ГГ:ХХ (наприклад, 15:30):")
+    await state.set_state(PollState.wait_time)
+
+@dp.message(PollState.wait_time)
+async def poll_get_time(message: types.Message, state: FSMContext):
+    await state.update_data(time=message.text.strip())
     data = await state.get_data()
-    question = data["question"]
-    options = data["options"]
-    audience = data.get("audience")
-    username = data.get("username")
-    poll_type = message.text.lower()
-    allow_multiple = poll_type == "кілька відповідей"
-
-    # --- Обираємо, кому надсилати ---
-    user_ids = []
-    if audience == "всім зі штату":
-        user_ids = get_all_staff_user_ids()  # повинна бути твоя функція
-    elif audience == "тим хто на зміні":
-        user_ids = get_today_users()
-    elif audience == "конкретному юзеру" and username:
-        user_ids = get_staff_user_ids_by_username(username)
-
-    if not user_ids:
-        await message.answer("Не знайдено жодного користувача для опитування.", reply_markup=types.ReplyKeyboardRemove())
-        await state.clear()
-        return
-
-    polls_sheet = gs.open_by_key(SHEET_KEY).worksheet('Опитування')
-    # --- Відправляємо Poll і зберігаємо poll_id ---
-    for uid in user_ids:
-        sent = await bot.send_poll(
-            uid,
-            question=question,
-            options=options,
-            is_anonymous=False,
-            allows_multiple_answers=allow_multiple
-        )
-        polls_sheet.append_row([
-            question, ", ".join(options), audience, poll_type, sent.poll.id, '', '', ''
-        ])
-    await message.answer("Опитування надіслано!", reply_markup=types.ReplyKeyboardRemove())
+    await message.answer("Опитування збережено! Воно буде відправлено за розкладом.")
+    # Зберегти в Google Sheets:
+    poll_sheet.append_row([
+        data.get("title", ""),
+        ";".join(data.get("options", [])),
+        "",  # вибраний варіант
+        data.get("time", ""),
+        "",  # username (буде заповнено при відповіді)
+        data.get("day", ""),
+        data.get("poll_type", ""),
+        data.get("recipients", ""),
+        data.get("username", "")
+    ])
     await state.clear()
 
-# --- Приймаємо відповіді poll ---
-@dp.poll_answer()
-async def save_poll_answer(poll_answer: types.PollAnswer):
-    user_id = poll_answer.user.id
-    username = poll_answer.user.username or str(user_id)
-    selected = poll_answer.option_ids  # список індексів обраних варіантів
-    poll_id = poll_answer.poll_id
+# --- Логіка надсилання опитування ---
+days_map = {
+    "понеділок": 0, "вівторок": 1, "середа": 2,
+    "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
+    "субота": 5, "неділя": 6
+}
 
-    # --- Зберігаємо у таблицю (знайти рядок за poll_id) ---
-    polls_sheet = gs.open_by_key(SHEET_KEY).worksheet('Опитування')
-    all_rows = polls_sheet.get_all_records()
-    for idx, row in enumerate(all_rows):
-        if str(row.get("poll_id", "")) == str(poll_id):
-            options = [opt.strip() for opt in row["варіанти"].split(",")]
-            answers = ", ".join([options[i] for i in selected if i < len(options)])
-            time = datetime.now().strftime("%Y-%m-%d %H:%M")
-            polls_sheet.update(f"F{idx+2}", username)     # F: username
-            polls_sheet.update(f"G{idx+2}", answers)      # G: відповідь
-            polls_sheet.update(f"H{idx+2}", time)         # H: час
-            break
+async def send_poll_to_users(title, options, poll_type, user_ids, poll_row_idx):
+    if poll_type == "radio":
+        kb = types.InlineKeyboardMarkup()
+        for opt in options:
+            kb.add(types.InlineKeyboardButton(text=opt, callback_data=f"poll_{poll_row_idx}_{opt}"))
+        for uid in user_ids:
+            await bot.send_message(uid, f"🗳 <b>{title}</b>", reply_markup=kb, parse_mode="HTML")
+    else:  # checkbox
+        kb = types.InlineKeyboardMarkup()
+        for opt in options:
+            kb.add(types.InlineKeyboardButton(text=opt, callback_data=f"pollcb_{poll_row_idx}_{opt}"))
+        kb.add(types.InlineKeyboardButton(text="✅ Завершити", callback_data=f"pollcb_{poll_row_idx}_done"))
+        for uid in user_ids:
+            await bot.send_message(uid, f"🗳 <b>{title}</b>\n(Можна обрати кілька варіантів, після вибору натисніть 'Завершити')", reply_markup=kb, parse_mode="HTML")
 
-# --- Кнопка для адміна: Показати результати ---
-@dp.message(Command("показати_результати"))
-async def show_poll_results(message: types.Message):
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("⛔️ Лише для адміністратора.")
+@dp.callback_query(lambda c: c.data.startswith("poll_"))
+async def on_poll_vote(call: types.CallbackQuery):
+    _, row_idx, option = call.data.split("_", 2)
+    user = call.from_user.username or call.from_user.id
+    poll_sheet.append_row([
+        poll_sheet.cell(int(row_idx)+1, 1).value,  # назва
+        poll_sheet.cell(int(row_idx)+1, 2).value,  # варіанти
+        option,                                    # вибраний варіант
+        datetime.now(UA_TZ).strftime("%Y-%m-%d %H:%M"),
+        user,                                      # username
+        poll_sheet.cell(int(row_idx)+1, 6).value,  # день
+        poll_sheet.cell(int(row_idx)+1, 7).value,  # тип
+        poll_sheet.cell(int(row_idx)+1, 8).value,  # recipients
+        poll_sheet.cell(int(row_idx)+1, 9).value   # username if individual
+    ])
+    await call.answer("Ваш вибір прийнято!", show_alert=True)
+    await call.message.edit_reply_markup(reply_markup=None)
+
+# Для чекбоксів — тимчасове зберігання
+user_checkbox_selections = {}
+
+@dp.callback_query(lambda c: c.data.startswith("pollcb_"))
+async def on_pollcb_vote(call: types.CallbackQuery):
+    parts = call.data.split("_")
+    row_idx = parts[1]
+    option = "_".join(parts[2:])
+    user = call.from_user.username or call.from_user.id
+    key = f"{row_idx}:{user}"
+    if option == "done":
+        selected = user_checkbox_selections.get(key, [])
+        if not selected:
+            await call.answer("Оберіть хоча б одну відповідь.", show_alert=True)
+            return
+        for opt in selected:
+            poll_sheet.append_row([
+                poll_sheet.cell(int(row_idx)+1, 1).value,  # назва
+                poll_sheet.cell(int(row_idx)+1, 2).value,  # варіанти
+                opt,                                       # вибраний варіант
+                datetime.now(UA_TZ).strftime("%Y-%m-%d %H:%M"),
+                user,                                      # username
+                poll_sheet.cell(int(row_idx)+1, 6).value,  # день
+                poll_sheet.cell(int(row_idx)+1, 7).value,  # тип
+                poll_sheet.cell(int(row_idx)+1, 8).value,  # recipients
+                poll_sheet.cell(int(row_idx)+1, 9).value   # username if individual
+            ])
+        await call.answer("Ваш вибір прийнято!", show_alert=True)
+        await call.message.edit_reply_markup(reply_markup=None)
+        user_checkbox_selections.pop(key, None)
         return
-    polls_sheet = gs.open_by_key(SHEET_KEY).worksheet('Опитування')
-    all_rows = polls_sheet.get_all_records()
-    text = "Останні результати опитувань:\n\n"
-    for row in all_rows[-5:]:
-        q = row["питання"]
-        ans = row.get("відповідь", "")
-        name = row.get("username", "")
-        t = row.get("час", "")
-        text += f"<b>{q}</b>\n{name or '-'}: {ans or '-'} ({t})\n\n"
-    await message.answer(text, parse_mode="HTML")
+    # Додаємо до вибраного
+    if key not in user_checkbox_selections:
+        user_checkbox_selections[key] = []
+    if option not in user_checkbox_selections[key]:
+        user_checkbox_selections[key].append(option)
+    await call.answer(f"Вибрано: {', '.join(user_checkbox_selections[key])}")
 
+# --- Планувальник для опитувань ---
+def schedule_polls():
+    rows = poll_sheet.get_all_records()
+    for idx, row in enumerate(rows):
+        title = row.get("назва", "")
+        options = row.get("варіанти вибору", "").split(";")
+        poll_type = row.get("тип", "radio")
+        day = row.get("день", "")
+        time_str = row.get("час", "")
+        recipients = row.get("recipients", "")
+        username = row.get("username", "")
+        if not title or not options or not day or not time_str:
+            continue
+        weekday_num = days_map.get(day)
+        if weekday_num is None:
+            continue
+        try:
+            hour, minute = map(int, time_str.split(":"))
+        except:
+            continue
+        if "штату" in recipients:
+            user_ids = get_all_staff_user_ids
+        elif "зміні" in recipients:
+            user_ids = get_today_users
+        elif "індивідуально" in recipients and username:
+            user_ids = lambda username=username: get_staff_user_ids_by_username(username)
+        else:
+            continue
+
+        def run_poll_async(idx=idx, title=title, options=options, poll_type=poll_type, user_ids=user_ids):
+            ids = user_ids() if callable(user_ids) else user_ids
+            asyncio.run_coroutine_threadsafe(
+                send_poll_to_users(title, options, poll_type, ids, idx),
+                asyncio.get_event_loop()
+            )
+
+        scheduler.add_job(
+            run_poll_async,
+            'cron',
+            day_of_week=weekday_num,
+            hour=hour,
+            minute=minute,
+            id=f"poll-{idx}",
+            replace_existing=True
+        )
 
 
 # --- Запуск ---

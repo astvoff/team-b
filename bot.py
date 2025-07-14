@@ -126,10 +126,10 @@ async def assign_user_to_block(block_num, user_id):
 def mark_task_done(row):
     day_sheet.update_cell(row, 10, "TRUE")
 
-async def send_reminder(user_id, task, reminder, row):
+async def send_reminder(user_id, task, reminder, row, idx=1):
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
-            [types.InlineKeyboardButton(text='✅ Виконано', callback_data=f'done_{row}')]
+            [types.InlineKeyboardButton(text='✅ Виконано', callback_data=f'done_{row}_{idx}')]
         ]
     )
     await bot.send_message(
@@ -173,8 +173,12 @@ async def notify_admin_if_needed(user_id, row, task, reminder, block):
 
 @dp.callback_query(F.data.startswith('done_'))
 async def done_callback(call: types.CallbackQuery):
-    row = int(call.data.split('_')[1])
-    mark_task_done(row)
+    parts = call.data.split('_')
+    row = int(parts[1])
+    idx = int(parts[2])  # індекс нагадування
+    # Визначаємо номер стовпця: 10 - 'Виконано', 11 - 'Виконано (2)', 12 - 'Виконано (3)' ...
+    col = 10 + (idx - 1)
+    day_sheet.update_cell(row, col, "TRUE")
     await call.message.edit_text(
         call.message.text.replace("нагадування надійшло", "Успішне"),
         reply_markup=None,
@@ -187,7 +191,7 @@ def schedule_reminders_for_user(user_id, tasks):
         if not t["time"]:
             continue
         times = [tm.strip() for tm in t["time"].split(",") if tm.strip()]
-        for time_str in times:
+        for i, time_str in enumerate(times):
             try:
                 remind_time = datetime.strptime(f"{get_today()} {time_str}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
             except Exception:
@@ -200,8 +204,8 @@ def schedule_reminders_for_user(user_id, tasks):
                 send_reminder,
                 'date',
                 run_date=remind_time,
-                args=[user_id, t["task"], t["reminder"], t["row"]],
-                id=f"{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
+                args=[user_id, t["task"], t["reminder"], t["row"], i+1],  # додати i+1
+                id=f"{user_id}-{t['row']}-{i+1}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
                 replace_existing=True
             )
             scheduler.add_job(

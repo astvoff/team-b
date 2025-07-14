@@ -140,6 +140,36 @@ async def send_reminder(user_id, task, reminder, row):
     )
     user_sessions[user_id] = row
 
+async def repeat_reminder_if_needed(user_id, row, task, reminder, block):
+    print(f"[DEBUG][repeat_reminder_if_needed] {user_id=}, {row=}, {task=}")
+    value = day_sheet.cell(row, 10).value
+    print(f"[DEBUG][repeat_reminder_if_needed] value={value}")
+    if value != "TRUE":
+        await bot.send_message(
+            user_id,
+            f"⏰ Завдання досі не виконано:\n\n"
+            f"Блок {block}\n"
+            f"Завдання: {task}\n"
+            f"Нагадування: {reminder}\n\n"
+            f"Не забудь натиснути «✅ Виконано»!"
+        )
+
+async def notify_admin_if_needed(user_id, row, task, reminder, block):
+    print(f"[DEBUG][notify_admin_if_needed] {user_id=}, {row=}, {task=}")
+    value = day_sheet.cell(row, 10).value
+    print(f"[DEBUG][notify_admin_if_needed] value={value}")
+    if value != "TRUE":
+        for admin_id in ADMIN_IDS:
+            await bot.send_message(
+                admin_id,
+                f"❗️ <b>Завдання НЕ виконано!</b>\n"
+                f"Користувач: {user_id}\n"
+                f"Блок: {block}\n"
+                f"Завдання: {task}\n"
+                f"Нагадування: {reminder}",
+                parse_mode="HTML"
+            )
+
 @dp.callback_query(F.data.startswith('done_'))
 async def done_callback(call: types.CallbackQuery):
     row = int(call.data.split('_')[1])
@@ -171,6 +201,22 @@ def schedule_reminders_for_user(user_id, tasks):
                 run_date=remind_time,
                 args=[user_id, t["task"], t["reminder"], t["row"]],
                 id=f"{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
+                replace_existing=True
+            )
+            scheduler.add_job(
+                repeat_reminder_if_needed,
+                'date',
+                run_date=remind_time + timedelta(minutes=REMINDER_REPEAT_MINUTES),
+                args=[user_id, t["row"], t["task"], t["reminder"], block],
+                id=f"repeat-{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
+                replace_existing=True
+            )
+            scheduler.add_job(
+                notify_admin_if_needed,
+                'date',
+                run_date=remind_time + timedelta(minutes=ADMIN_NOTIFY_MINUTES),
+                args=[user_id, t["row"], t["task"], t["reminder"], block],
+                id=f"admin-{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
                 replace_existing=True
             )
 

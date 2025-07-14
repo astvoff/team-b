@@ -417,9 +417,6 @@ admin_menu_kb = types.ReplyKeyboardMarkup(
 
 from datetime import datetime, timedelta
 
-class ReportFSM(StatesGroup):
-    waiting_date = State()
-
 @dp.message(F.text == "📊 Звіт виконання")
 async def admin_report_choose_date(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:

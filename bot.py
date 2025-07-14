@@ -163,6 +163,36 @@ def schedule_reminders_for_user(user_id, tasks):
                 replace_existing=True
             )
 
+def schedule_all_block_tasks_for_today():
+    today = get_today()
+    records = day_sheet.get_all_records()
+    # Словник: user_id -> список задач
+    user_tasks = {}
+    for idx, row in enumerate(records):
+        if str(row.get("Дата")) != today:
+            continue
+        user_id = row.get("Telegram ID")
+        if user_id:
+            try:
+                user_id = int(user_id)
+            except Exception:
+                continue
+            # Додаємо задачу користувачу
+            task = {
+                "row": idx + 2,
+                "task": row.get("Завдання"),
+                "reminder": row.get("Нагадування"),
+                "time": row.get("Час"),
+                "done": row.get("Виконано", ""),
+                "block": row.get("Блок")
+            }
+            if user_id not in user_tasks:
+                user_tasks[user_id] = []
+            user_tasks[user_id].append(task)
+    # Для кожного user_id ставимо нагадування
+    for user_id, tasks in user_tasks.items():
+        schedule_reminders_for_user(user_id, tasks)
+
 # --- Загальні нагадування (розсилка) ---
 def get_all_staff_user_ids():
     ids = []
@@ -469,11 +499,14 @@ async def universal_back(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("⬅️ Повернулись до головного меню.", reply_markup=user_menu)
 
+
+
 # --- Запуск ---
 async def main():
     loop = asyncio.get_running_loop()
     schedule_general_reminders(loop)
     scheduler.start()
+    schedule_all_block_tasks_for_today()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

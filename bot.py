@@ -598,7 +598,7 @@ async def my_tasks(message: types.Message):
         status = "✅" if done else "❌ Не виконано"
         text = f"<b>Завдання:</b> {task}\n"
         if desc:
-            text += f"<b>Опис:</b> {desc}\n"
+    text += f"<b>Зона відповідальності:</b> {desc}\n"
         text += f"<b>Статус:</b> {status}"
         kb = types.InlineKeyboardMarkup(
             inline_keyboard=[
@@ -618,7 +618,7 @@ async def send_task_to_user(user_id, row, task, desc, status, row_idx):
         ])
     msg = f"<b>Завдання:</b> {task}\n"
     if desc:
-        msg += f"<b>Опис:</b> {desc}\n"
+    text += f"<b>Зона відповідальності:</b> {desc}\n"
     msg += f"<b>Статус:</b> {status_text}"
     await bot.send_message(user_id, msg, parse_mode="HTML", reply_markup=kb)
 
@@ -781,7 +781,7 @@ async def send_task_with_status(user_id, task, desc, done, row):
     status = "✅" if done else "❌"
     text = f"<b>Завдання:</b> {task}\n"
     if desc:
-        text += f"<b>Опис:</b> {desc}\n"
+        text += f"<b>Зона відповідальності:</b> {desc}\n"
     text += f"<b>Статус:</b> {status}"
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[

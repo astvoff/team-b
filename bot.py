@@ -717,15 +717,6 @@ async def on_blocks_count_chosen(message: types.Message):
 
 @dp.message(F.text.regexp(r'^\d+ блок$'))
 async def select_block(message: types.Message):
-      seen_tasks = set()
-    for t in tasks:
-        task_name = t["task"].strip().lower()
-        if task_name in seen_tasks:
-            continue
-        seen_tasks.add(task_name)
-        desc = t.get("Опис") or t.get("desc") or ""
-        done = (t.get("done", "").strip().upper() == "TRUE")
-        await send_task_with_status(user_id, t["task"], desc, done, t["row"])
     block_num = message.text.split()[0]
     user_id = message.from_user.id
     today = get_today()
@@ -740,6 +731,19 @@ async def select_block(message: types.Message):
                 return
     await assign_user_to_block(block_num, user_id)
     tasks = get_tasks_for_block(block_num, user_id)
+    if not tasks:
+        await message.answer("Завдань не знайдено для цього блоку.", reply_markup=user_menu)
+        return
+
+    seen_tasks = set()
+    for t in tasks:
+        task_name = t["task"].strip().lower()
+        if task_name in seen_tasks:
+            continue
+        seen_tasks.add(task_name)
+        desc = t.get("Опис") or t.get("desc") or ""
+        done = (t.get("done", "").strip().upper() == "TRUE")
+        await send_task_with_status(user_id, t["task"], desc, done, t["row"])
     if not tasks:
         await message.answer("Завдань не знайдено для цього блоку.", reply_markup=user_menu)
         return

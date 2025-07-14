@@ -618,10 +618,10 @@ async def send_task_to_user(user_id, row, task, desc, status, row_idx):
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="✅ Виконано", callback_data=f"done_task_{row_idx}")]
         ])
-    msg = f"<b>Завдання:</b> {task}\n"
+    msg = f"<b>Завдання:</b> <b>{task}</b>\n"
     if desc:
-    text += f"<b>Зона відповідальності:</b> {desc}\n"
-    msg += f"<b>Статус:</b> {status_text}"
+        msg += f"<u>Зона відповідальності:</u>\n{desc}\n"
+    msg += f"<b>Статус:</b> <b>{status_text}</b>"
     await bot.send_message(user_id, msg, parse_mode="HTML", reply_markup=kb)
 
 @dp.callback_query(F.data.startswith("task_done_"))

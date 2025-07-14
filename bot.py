@@ -779,10 +779,11 @@ async def universal_back(message: types.Message, state: FSMContext):
 
 async def send_task_with_status(user_id, task, desc, done, row):
     status = "✅" if done else "❌"
-    text = f"<b>Завдання:</b> {task}\n"
-    if desc:
-        text += f"<b>Зона відповідальності:</b> {desc}\n"
-    text += f"<b>Статус:</b> {status}"
+    text = (
+        f"<b>Завдання:</b> <b>{task}</b>\n"
+        f"<u>Зона відповідальності:</u>\n{desc.strip()}\n"
+        f"<b>Статус: {status}</b>"
+    )
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
             [types.InlineKeyboardButton(text="✅ Виконано", callback_data=f"task_done_{row}")]

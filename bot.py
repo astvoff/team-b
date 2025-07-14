@@ -81,9 +81,11 @@ def copy_template_blocks_to_today(blocks_count):
     records = template_sheet.get_all_records()
     today = get_today()
     existing = day_sheet.get_all_records()
+    # Перевіряємо, чи вже є завдання на сьогодні з цим blocks_count
     for row in existing:
         if str(row["Дата"]) == today and str(row["Кількість блоків"]) == str(blocks_count):
-            return
+            return  # вже є — не додаємо
+    # Додаємо нові рядки тільки для сьогоднішньої дати
     new_rows = []
     for row in records:
         if str(row["Кількість блоків"]) == str(blocks_count):

@@ -55,70 +55,9 @@ information_base_sheet = gs.open_by_key(SHEET_KEY).worksheet(INFORMATION_BASE_SH
 staff_sheet = gs.open_by_key(SHEET_KEY).worksheet(STAFF_SHEET)
 general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
 poll_sheet = gs.open_by_key(SHEET_KEY).worksheet(POLL_SHEET)
-# --- Адмін функції --- #
 
-from datetime import datetime, timedelta
 
-@dp.message(F.text == "📊 Звіт виконання")
-async def admin_report_choose_date(message: types.Message, state: FSMContext):
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("⛔️ Доступ лише адміністратору.")
-        return
-    # генеруємо останні 10 днів, сьогодні - окремо
-    today = datetime.now(UA_TZ).date()
-    dates = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(10)]
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[[types.KeyboardButton(text=d)] for d in dates] + [[types.KeyboardButton(text="Відмінити дію")]],
-        resize_keyboard=True
-    )
-    await state.set_state(ReportFSM.waiting_date)
-    await message.answer("Оберіть дату для звіту:", reply_markup=kb)
 
-@dp.message(ReportFSM.waiting_date)
-async def admin_report_generate(message: types.Message, state: FSMContext):
-    date = message.text.strip()
-    await state.clear()
-
-    # Якщо це сьогодні, беремо з "Завдання на день"
-    if date == datetime.now(UA_TZ).strftime('%Y-%m-%d'):
-        sheet = day_sheet
-    else:
-        # Визначаємо назву листа для архіву, наприклад "Архів 2024-07-14"
-        try:
-            archive_sheet = f"Архів {date}"
-            sheet = gs.open_by_key(SHEET_KEY).worksheet(archive_sheet)
-        except Exception:
-            await message.answer(f"Не знайдено архівний лист для {date}.")
-            return
-
-    rows = sheet.get_all_records()
-    if not rows:
-        await message.answer("Немає даних за цю дату.")
-        return
-
-    # Збір і форматування звіту
-    result = f"<b>Звіт за {date}:</b>\n\n"
-    # Групуємо по блоках
-    blocks = {}
-    for row in rows:
-        block = str(row.get("Блок") or "")
-        if not block: continue
-        if block not in blocks:
-            blocks[block] = []
-        blocks[block].append(row)
-
-    for block, items in sorted(blocks.items(), key=lambda x: int(x[0])):
-        result += f"Блок {block}:\n"
-        for r in items:
-            task = r.get("Завдання") or ""
-            reminder = r.get("Нагадування") or ""
-            done = r.get("Виконано", "").strip().upper() == "TRUE"
-            user = r.get("Імʼя") or "-"
-            mark = "✅" if done else "❌"
-            result += f"• <b>{task}</b> | {reminder} {mark} (Відповідальний: {user})\n"
-        result += "\n"
-    await message.answer(result, parse_mode="HTML", reply_markup=admin_menu_kb)
-    
 # --- Telegram bot ---
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -463,6 +402,7 @@ user_menu = types.ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
+# --- Адмін меню --- #
 
 admin_menu_kb = types.ReplyKeyboardMarkup(
     keyboard=[
@@ -472,6 +412,86 @@ admin_menu_kb = types.ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
+
+# --- Адмін звіт по виконанню --- #
+
+from datetime import datetime, timedelta
+
+class ReportFSM(StatesGroup):
+    waiting_date = State()
+
+@dp.message(F.text == "📊 Звіт виконання")
+async def admin_report_choose_date(message: types.Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("⛔️ Доступ лише адміністратору.")
+        return
+    # Генеруємо останні 10 днів, сьогодні — окремо
+    today = datetime.now(UA_TZ).date()
+    dates = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(10)]
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=[[types.KeyboardButton(text=d)] for d in dates] + [[types.KeyboardButton(text="Відмінити дію")]],
+        resize_keyboard=True
+    )
+    await state.set_state(ReportFSM.waiting_date)
+    await message.answer("Оберіть дату для звіту:", reply_markup=kb)
+
+@dp.message(ReportFSM.waiting_date)
+async def admin_report_generate(message: types.Message, state: FSMContext):
+    date = message.text.strip()
+    await state.clear()
+
+    # Якщо це сьогодні, беремо з "Завдання на день"
+    if date == datetime.now(UA_TZ).strftime('%Y-%m-%d'):
+        sheet = day_sheet
+    else:
+        # Визначаємо назву листа для архіву, наприклад "Архів 2024-07-14"
+        try:
+            archive_sheet = f"Архів {date}"
+            sheet = gs.open_by_key(SHEET_KEY).worksheet(archive_sheet)
+        except Exception:
+            await message.answer(f"Не знайдено архівний лист для {date}.")
+            return
+
+    rows = sheet.get_all_records()
+    if not rows:
+        await message.answer("Немає даних за цю дату.")
+        return
+
+    # Збір і форматування звіту
+    result = f"<b>Звіт за {date}:</b>\n\n"
+    # Групуємо по блоках
+    blocks = {}
+    for row in rows:
+        block = str(row.get("Блок") or "")
+        if not block:
+            continue
+        if block not in blocks:
+            blocks[block] = []
+        blocks[block].append(row)
+
+    for block, items in sorted(blocks.items(), key=lambda x: int(x[0])):
+        result += f"Блок <b>{block}</b>:\n"
+        for r in items:
+            task = r.get("Завдання") or ""
+            reminder = r.get("Нагадування") or ""
+            user = r.get("Імʼя") or "-"
+            # Для мультистатусу
+            marks = []
+            if "Виконано (2)" in r or "Виконано (3)" in r or "Виконано (4)" in r:
+                for col in ["Виконано", "Виконано (2)", "Виконано (3)", "Виконано (4)"]:
+                    val = str(r.get(col, "")).strip().upper()
+                    if val == "TRUE":
+                        marks.append("✅")
+                    elif val:  # якщо поле не пусте, але не TRUE
+                        marks.append("❌")
+                mark = "".join(marks) if marks else "❌"
+            else:
+                done = str(r.get("Виконано", "")).strip().upper() == "TRUE"
+                mark = "✅" if done else "❌"
+            result += f"• <b>{task}</b> | {reminder} {mark} (Відповідальний: {user})\n"
+        result += "\n"
+    await message.answer(result, parse_mode="HTML", reply_markup=admin_menu_kb)
+    
 
 @dp.message(F.text == "Створити нагадування")
 async def start_reminder(message: types.Message, state: FSMContext):

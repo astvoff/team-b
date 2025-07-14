@@ -479,7 +479,15 @@ async def admin_report_generate(message: types.Message, state: FSMContext):
 
     result = f"<b>Звіт за {date}:</b>\n\n"
     for block, items in sorted(blocks.items(), key=lambda x: int(x[0])):
-        # шукаємо Telegram ID і визначаємо імʼя
+        for block, items in sorted(blocks.items(), key=lambda x: int(x[0])):
+    # ...
+    seen_tasks = set()
+    for r in items:
+        task = r.get("Завдання") or ""
+        task_key = task.strip().lower()
+        if task_key in seen_tasks:
+            continue
+        seen_tasks.add(task_key)
         responsible_id = None
         for r in items:
             if r.get("Telegram ID"):
@@ -714,6 +722,15 @@ async def on_blocks_count_chosen(message: types.Message):
 
 @dp.message(F.text.regexp(r'^\d+ блок$'))
 async def select_block(message: types.Message):
+      seen_tasks = set()
+    for t in tasks:
+        task_name = t["task"].strip().lower()
+        if task_name in seen_tasks:
+            continue
+        seen_tasks.add(task_name)
+        desc = t.get("Опис") or t.get("desc") or ""
+        done = (t.get("done", "").strip().upper() == "TRUE")
+        await send_task_with_status(user_id, t["task"], desc, done, t["row"])
     block_num = message.text.split()[0]
     user_id = message.from_user.id
     today = get_today()

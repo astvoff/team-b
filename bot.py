@@ -735,6 +735,7 @@ async def select_block(message: types.Message):
         await message.answer("Завдань не знайдено для цього блоку.", reply_markup=user_menu)
         return
 
+    # 1. Унікальні завдання
     seen_tasks = set()
     for t in tasks:
         task_name = (t["task"] or "").strip().lower()
@@ -744,6 +745,25 @@ async def select_block(message: types.Message):
         desc = t.get("Опис") or t.get("desc") or ""
         done = (t.get("done", "").strip().upper() == "TRUE")
         await send_task_with_status(user_id, t["task"], desc, done, t["row"])
+    
+    # 2. Унікальні нагадування
+    seen_reminders = set()
+    reminders_text = "<b>Нагадування для вашого блоку:</b>\n"
+    for t in tasks:
+        reminder = (t.get("reminder") or "").strip()
+        time = (t.get("time") or "").strip()
+        if not reminder:
+            continue
+        reminder_key = reminder.lower() + "|" + time
+        if reminder_key in seen_reminders:
+            continue
+        seen_reminders.add(reminder_key)
+        if time:
+            reminders_text += f"— {time}: {reminder}\n"
+        else:
+            reminders_text += f"— {reminder}\n"
+    if len(seen_reminders) > 0:
+        await message.answer(reminders_text, parse_mode="HTML", reply_markup=user_menu)
 
 @dp.callback_query(F.data.startswith('task_done_'))
 async def mark_task_done_callback(call: types.CallbackQuery):

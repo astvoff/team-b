@@ -17,13 +17,13 @@ class ReminderFSM(StatesGroup):
     wait_time = State()
 
 class PollState(StatesGroup):
-    wait_type = State()
-    wait_title = State()
-    wait_options = State()
-    wait_recipients = State()
-    wait_username = State()
-    wait_day = State()
-    wait_time = State()
+    waiting_question = State()
+    waiting_options = State()
+    waiting_type = State()
+    waiting_target = State()
+    waiting_username = State()
+    waiting_datetime = State()
+    confirm = State()
     
 # --- Константи ---
 load_dotenv()
@@ -751,6 +751,7 @@ async def main():
     schedule_general_reminders(loop)
     scheduler.start()
     schedule_all_block_tasks_for_today()
+    schedule_polls()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

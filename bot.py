@@ -574,17 +574,28 @@ async def my_tasks(message: types.Message):
     today = get_today()
     records = day_sheet.get_all_records()
     my_tasks = [
-        (i+2, row) for i, row in enumerate(records)
+        row for row in records
         if str(row.get("Дата")) == today and str(row.get("Telegram ID")) == str(user_id)
     ]
     if not my_tasks:
         await message.answer("У вас немає завдань на сьогодні.", reply_markup=user_menu)
         return
-    for row_idx, row in my_tasks:
+
+    for row in my_tasks:
         task = row.get("Завдання") or ""
         desc = row.get("Опис") or ""
-        status = (row.get("Виконано", "").strip().upper() == "TRUE")
-        await send_task_to_user(user_id, row, task, desc, status, row_idx)
+        done = (row.get("Виконано", "").strip().upper() == "TRUE")
+        status = "✅" if done else "❌ Не виконано"
+        text = f"<b>Завдання:</b> {task}\n"
+        if desc:
+            text += f"<b>Опис:</b> {desc}\n"
+        text += f"<b>Статус:</b> {status}"
+        kb = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [types.InlineKeyboardButton(text="✅ Виконано", callback_data=f"task_done_{row['_row']}")]
+            ]
+        )
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 

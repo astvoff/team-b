@@ -396,7 +396,8 @@ scheduler.add_job(
 user_menu = types.ReplyKeyboardMarkup(
     keyboard=[
         [types.KeyboardButton(text="Розпочати день")],
-        [types.KeyboardButton(text="Список моїх завдань"), types.KeyboardButton(text="Створити нагадування")],
+        [types.KeyboardButton(text="Список моїх завдань"), types.KeyboardButton(text="Мої нагадування")],
+        [types.KeyboardButton(text="Створити нагадування")],
         [types.KeyboardButton(text="Інформаційна база"), types.KeyboardButton(text="Завершити день")],
         [types.KeyboardButton(text="Відмінити дію")]
     ],
@@ -581,11 +582,30 @@ async def my_tasks(message: types.Message):
 
     text = "<b>Ваші завдання на сьогодні:</b>\n"
     for row in my_tasks:
-        status = "✅" if row.get("Виконано") == "TRUE" else "❌"
-        time = row.get("Час") or ""
         task = row.get("Завдання") or ""
+        status = "✅" if (row.get("Виконано", "").strip().upper() == "TRUE") else "❌"
+        text += f"— {task} {status}\n"
+    await message.answer(text, parse_mode="HTML", reply_markup=user_menu)
+
+@dp.message(F.text == "Мої нагадування")
+async def my_reminders(message: types.Message):
+    user_id = message.from_user.id
+    today = get_today()
+    records = day_sheet.get_all_records()
+    my_reminders = [
+        row for row in records
+        if str(row.get("Дата")) == today and str(row.get("Telegram ID")) == str(user_id)
+    ]
+    if not my_reminders:
+        await message.answer("У вас немає нагадувань на сьогодні.", reply_markup=user_menu)
+        return
+
+    text = "<b>Ваші нагадування на сьогодні:</b>\n"
+    for row in my_reminders:
         reminder = row.get("Нагадування") or ""
-        text += f"— {time}: {task} | {reminder} {status}\n"
+        time = row.get("Час") or ""
+        status = "✅" if (row.get("Виконано", "").strip().upper() == "TRUE") else "❌"
+        text += f"— {time}: {reminder} {status}\n"
     await message.answer(text, parse_mode="HTML", reply_markup=user_menu)
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton

@@ -335,9 +335,10 @@ admin_menu_kb = types.ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
-@dp.message(F.text.lower() == "створити опитування")
-async def handle_poll_button(message: types.Message, state: FSMContext):
-    await start_poll_create(message, state)
+
+@dp.message(lambda m: m.text and m.text.strip().lower() == "Створити опитування")
+async def create_poll(message: types.Message, state: FSMContext):
+    await message.answer("Введіть питання для опитування:")
 
 @dp.message(F.text == "Створити нагадування")
 async def start_reminder(message: types.Message, state: FSMContext):

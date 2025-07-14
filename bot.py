@@ -591,23 +591,25 @@ async def my_tasks(message: types.Message):
         await message.answer("У вас немає завдань на сьогодні.", reply_markup=user_menu)
         return
 
+    seen_tasks = set()
     for row_idx, row in my_tasks:
-        task = row.get("Завдання") or ""
+        task = (row.get("Завдання") or "").strip().lower()
+        if task in seen_tasks:
+            continue
+        seen_tasks.add(task)
         desc = row.get("Опис") or ""
         done = (row.get("Виконано", "").strip().upper() == "TRUE")
         status = "✅" if done else "❌ Не виконано"
-        text = f"<b>Завдання:</b> {task}\n"
+        text = f"<b>Завдання:</b> <b>{row.get('Завдання') or ''}</b>\n"
         if desc:
-        text += f"<b>Зона відповідальності:</b> {desc}\n"
-        text += f"<b>Статус:</b> {status}"
+            text += f"<u>Зона відповідальності:</u>\n{desc}\n"
+        text += f"<b>Статус:</b> <b>{status}</b>"
         kb = types.InlineKeyboardMarkup(
             inline_keyboard=[
                 [types.InlineKeyboardButton(text="✅ Виконано", callback_data=f"task_done_{row_idx}")]
             ]
         )
         await message.answer(text, reply_markup=kb, parse_mode="HTML")
-
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 async def send_task_to_user(user_id, row, task, desc, status, row_idx):
     status_text = "✅ Виконано" if status else "❌ Не виконано"
@@ -649,8 +651,22 @@ async def my_reminders(message: types.Message):
         await message.answer("У вас немає нагадувань на сьогодні.", reply_markup=user_menu)
         return
 
+    # Сортуємо по часу (якщо декілька, то беремо найперший з "Час")
+    def parse_time(row):
+        times = (row.get("Час") or "").split(",")
+        times = [t.strip() for t in times if t.strip()]
+        if not times:
+            return "23:59"  # в кінець
+        try:
+            # Повертаємо перший час для сортування
+            return times[0]
+        except:
+            return "23:59"
+
+    my_reminders_sorted = sorted(my_reminders, key=parse_time)
+
     text = "<b>Ваші нагадування на сьогодні:</b>\n"
-    for row in my_reminders:
+    for row in my_reminders_sorted:
         reminder = row.get("Нагадування") or ""
         time = row.get("Час") or ""
         status = "✅" if (row.get("Виконано", "").strip().upper() == "TRUE") else "❌"

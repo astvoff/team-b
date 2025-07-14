@@ -31,6 +31,7 @@ class ReportFSM(StatesGroup):
 # --- Константи ---
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
+dp = Dispatcher()
 SHEET_KEY = os.getenv('SHEET_KEY')
 UA_TZ = timezone(timedelta(hours=3))  # Київ
 REMINDER_REPEAT_MINUTES = 20

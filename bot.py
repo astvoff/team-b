@@ -417,12 +417,24 @@ admin_menu_kb = types.ReplyKeyboardMarkup(
 
 from datetime import datetime, timedelta
 
+class ReportFSM(StatesGroup):
+    waiting_date = State()
+
+def get_full_name_by_id(user_id):
+    try:
+        for r in staff_sheet.get_all_records():
+            if str(r.get("Telegram ID", "")).strip() == str(user_id):
+                return r.get(list(r.keys())[0], "")  # перший стовпець — ім'я
+    except Exception as e:
+        print(f"[ERROR][get_full_name_by_id]: {e}")
+    return "?"
+
 @dp.message(F.text == "📊 Звіт виконання")
 async def admin_report_choose_date(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔️ Доступ лише адміністратору.")
         return
-    # Генеруємо останні 10 днів, сьогодні — окремо
+    # генеруємо останні 10 днів, сьогодні - окремо
     today = datetime.now(UA_TZ).date()
     dates = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(10)]
     kb = types.ReplyKeyboardMarkup(
@@ -436,12 +448,10 @@ async def admin_report_choose_date(message: types.Message, state: FSMContext):
 async def admin_report_generate(message: types.Message, state: FSMContext):
     date = message.text.strip()
     await state.clear()
-
     # Якщо це сьогодні, беремо з "Завдання на день"
     if date == datetime.now(UA_TZ).strftime('%Y-%m-%d'):
         sheet = day_sheet
     else:
-        # Визначаємо назву листа для архіву, наприклад "Архів 2024-07-14"
         try:
             archive_sheet = f"Архів {date}"
             sheet = gs.open_by_key(SHEET_KEY).worksheet(archive_sheet)
@@ -454,9 +464,7 @@ async def admin_report_generate(message: types.Message, state: FSMContext):
         await message.answer("Немає даних за цю дату.")
         return
 
-    # Збір і форматування звіту
-    result = f"<b>Звіт за {date}:</b>\n\n"
-    # Групуємо по блоках
+    # групуємо по блоках
     blocks = {}
     for row in rows:
         block = str(row.get("Блок") or "")
@@ -466,26 +474,36 @@ async def admin_report_generate(message: types.Message, state: FSMContext):
             blocks[block] = []
         blocks[block].append(row)
 
+    result = f"<b>Звіт за {date}:</b>\n\n"
     for block, items in sorted(blocks.items(), key=lambda x: int(x[0])):
-        result += f"Блок <b>{block}</b>:\n"
+        # шукаємо Telegram ID і визначаємо імʼя
+        responsible_id = None
+        for r in items:
+            if r.get("Telegram ID"):
+                responsible_id = r["Telegram ID"]
+                break
+        if responsible_id:
+            name = get_full_name_by_id(responsible_id)
+        else:
+            name = "—"
+        result += f"<b>Блок {block}:</b>\n"
+        result += f"Відповідальний: <b>{name}</b>\n"
+        # для кожного завдання — беремо список часів (або один)
         for r in items:
             task = r.get("Завдання") or ""
             reminder = r.get("Нагадування") or ""
-            user = r.get("Імʼя") or "-"
-            # Для мультистатусу
-            marks = []
-            if "Виконано (2)" in r or "Виконано (3)" in r or "Виконано (4)" in r:
-                for col in ["Виконано", "Виконано (2)", "Виконано (3)", "Виконано (4)"]:
-                    val = str(r.get(col, "")).strip().upper()
-                    if val == "TRUE":
-                        marks.append("✅")
-                    elif val:  # якщо поле не пусте, але не TRUE
-                        marks.append("❌")
-                mark = "".join(marks) if marks else "❌"
-            else:
-                done = str(r.get("Виконано", "")).strip().upper() == "TRUE"
-                mark = "✅" if done else "❌"
-            result += f"• <b>{task}</b> | {reminder} {mark} (Відповідальний: {user})\n"
+            times = [tm.strip() for tm in (r.get("Час") or "").split(",") if tm.strip()]
+            # знаходимо всі колонки "Виконано", "Виконано (2)", ...
+            status_marks = []
+            for idx, tm in enumerate(times):
+                col = "Виконано" if idx == 0 else f"Виконано ({idx+1})"
+                val = (r.get(col) or "").strip().upper()
+                status_marks.append("✅" if val == "TRUE" else "❌")
+            if not times:
+                # без часу — перевіряємо просто "Виконано"
+                val = (r.get("Виконано") or "").strip().upper()
+                status_marks.append("✅" if val == "TRUE" else "❌")
+            result += f"• <b>{task}</b> | {reminder} {' '.join(status_marks)}\n"
         result += "\n"
     await message.answer(result, parse_mode="HTML", reply_markup=admin_menu_kb)
     

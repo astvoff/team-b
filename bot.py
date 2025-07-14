@@ -336,10 +336,6 @@ admin_menu_kb = types.ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-@dp.message(lambda m: m.text and m.text.strip().lower() == "Створити опитування")
-async def create_poll(message: types.Message, state: FSMContext):
-    await message.answer("Введіть питання для опитування:")
-
 @dp.message(F.text == "Створити нагадування")
 async def start_reminder(message: types.Message, state: FSMContext):
     await state.set_state(ReminderFSM.wait_text)
@@ -510,95 +506,119 @@ async def universal_back(message: types.Message, state: FSMContext):
     await message.answer("⬅️ Повернулись до головного меню.", reply_markup=user_menu)
 
 # --- Опитування --- #
-@dp.message(CommandStart())
-async def start_cmd(message: types.Message):
-    await message.answer("Вітаю! Для створення опитування введіть /poll")
-
-@dp.message(F.text == "/poll")
+@dp.message(lambda m: m.text and m.text.strip().lower() == "створити опитування")
 async def poll_start(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
-        await message.answer("⛔️ Доступ лише для адміністратора.")
+        await message.answer("⛔️ Доступно лише адміністратору.")
         return
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[
-            [types.KeyboardButton(text="Radio-кнопки (1 відповідь)"), types.KeyboardButton(text="Checkbox (декілька відповідей)")],
-        ], resize_keyboard=True
-    )
-    await message.answer("Оберіть тип опитування:", reply_markup=kb)
-    await state.set_state(PollState.wait_type)
+    await message.answer("Введіть текст питання для опитування:")
+    await state.set_state(PollState.waiting_question)
 
-@dp.message(PollState.wait_type)
-async def poll_get_type(message: types.Message, state: FSMContext):
-    poll_type = "radio" if "radio" in message.text.lower() else "checkbox"
-    await state.update_data(poll_type=poll_type)
-    await message.answer("Введіть назву опитування:", reply_markup=types.ReplyKeyboardRemove())
-    await state.set_state(PollState.wait_title)
+@dp.message(PollState.waiting_question)
+async def poll_got_question(message: types.Message, state: FSMContext):
+    await state.update_data(question=message.text.strip())
+    await message.answer("Введіть варіанти відповіді через кому (наприклад: Так, Ні, Не знаю):")
+    await state.set_state(PollState.waiting_options)
 
-@dp.message(PollState.wait_title)
-async def poll_get_title(message: types.Message, state: FSMContext):
-    await state.update_data(title=message.text.strip())
-    await message.answer("Введіть варіанти відповідей через кому (напр. Так, Ні, Можливо):")
-    await state.set_state(PollState.wait_options)
-
-@dp.message(PollState.wait_options)
-async def poll_get_options(message: types.Message, state: FSMContext):
-    options = [x.strip() for x in message.text.split(",") if x.strip()]
+@dp.message(PollState.waiting_options)
+async def poll_got_options(message: types.Message, state: FSMContext):
+    options = [opt.strip() for opt in message.text.split(",") if opt.strip()]
     if len(options) < 2:
-        await message.answer("Введіть хоча б два варіанти.")
+        await message.answer("Має бути мінімум 2 варіанти!")
         return
     await state.update_data(options=options)
     kb = types.ReplyKeyboardMarkup(
         keyboard=[
-            [types.KeyboardButton(text="Всім зі штату")],
-            [types.KeyboardButton(text="Тим, хто на зміні")],
-            [types.KeyboardButton(text="Індивідуально (за username)")]
-        ], resize_keyboard=True
-    )
-    await message.answer("Кому відправити опитування?", reply_markup=kb)
-    await state.set_state(PollState.wait_recipients)
+            [types.KeyboardButton(text="Одна відповідь (radio)")],
+            [types.KeyboardButton(text="Кілька відповідей (checkbox)")]
+        ], resize_keyboard=True, one_time_keyboard=True)
+    await message.answer("Який тип опитування?", reply_markup=kb)
+    await state.set_state(PollState.waiting_type)
 
-@dp.message(PollState.wait_recipients)
-async def poll_get_recipients(message: types.Message, state: FSMContext):
-    txt = message.text.lower()
-    if "індивідуально" in txt:
-        await message.answer("Вкажіть username користувача (без @):", reply_markup=types.ReplyKeyboardRemove())
-        await state.set_state(PollState.wait_username)
+@dp.message(PollState.waiting_type)
+async def poll_got_type(message: types.Message, state: FSMContext):
+    if "одна" in message.text.lower():
+        poll_type = "radio"
+    elif "кілька" in message.text.lower():
+        poll_type = "checkbox"
     else:
-        await state.update_data(recipients=txt)
-        await message.answer("Вкажіть день тижня (наприклад, понеділок):")
-        await state.set_state(PollState.wait_day)
+        await message.answer("Оберіть тип із кнопок.")
+        return
+    await state.update_data(poll_type=poll_type)
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=[
+            [types.KeyboardButton(text="Всі зі штату")],
+            [types.KeyboardButton(text="Ті, хто на зміні")],
+            [types.KeyboardButton(text="Конкретний користувач")]
+        ], resize_keyboard=True, one_time_keyboard=True)
+    await message.answer("Кому надіслати опитування?", reply_markup=kb)
+    await state.set_state(PollState.waiting_target)
 
-@dp.message(PollState.wait_username)
-async def poll_get_username(message: types.Message, state: FSMContext):
+@dp.message(PollState.waiting_target)
+async def poll_got_target(message: types.Message, state: FSMContext):
+    if "штат" in message.text.lower():
+        await state.update_data(target="all")
+        await state.set_state(PollState.waiting_datetime)
+        await message.answer("Введіть дату і час у форматі YYYY-MM-DD HH:MM:")
+    elif "зміні" in message.text.lower():
+        await state.update_data(target="shift")
+        await state.set_state(PollState.waiting_datetime)
+        await message.answer("Введіть дату і час у форматі YYYY-MM-DD HH:MM:")
+    elif "користувач" in message.text.lower():
+        await state.update_data(target="user")
+        await state.set_state(PollState.waiting_username)
+        await message.answer("Введіть username користувача (без @):")
+    else:
+        await message.answer("Оберіть варіант із кнопок.")
+
+@dp.message(PollState.waiting_username)
+async def poll_got_username(message: types.Message, state: FSMContext):
     username = message.text.strip().lstrip('@')
-    await state.update_data(username=username, recipients="індивідуально")
-    await message.answer("Вкажіть день тижня (наприклад, понеділок):")
-    await state.set_state(PollState.wait_day)
+    await state.update_data(username=username)
+    await state.set_state(PollState.waiting_datetime)
+    await message.answer("Введіть дату і час у форматі YYYY-MM-DD HH:MM:")
 
-@dp.message(PollState.wait_day)
-async def poll_get_day(message: types.Message, state: FSMContext):
-    await state.update_data(day=message.text.strip().lower())
-    await message.answer("Вкажіть час опитування у форматі ГГ:ХХ (наприклад, 15:30):")
-    await state.set_state(PollState.wait_time)
-
-@dp.message(PollState.wait_time)
-async def poll_get_time(message: types.Message, state: FSMContext):
-    await state.update_data(time=message.text.strip())
+@dp.message(PollState.waiting_datetime)
+async def poll_got_datetime(message: types.Message, state: FSMContext):
+    try:
+        dt = datetime.strptime(message.text.strip(), "%Y-%m-%d %H:%M")
+        await state.update_data(datetime=dt.strftime("%Y-%m-%d %H:%M"))
+    except Exception:
+        await message.answer("Некоректний формат. Приклад: 2025-07-14 16:00")
+        return
     data = await state.get_data()
-    await message.answer("Опитування збережено! Воно буде відправлено за розкладом.")
-    # Зберегти в Google Sheets:
-    poll_sheet.append_row([
-        data.get("title", ""),
-        ";".join(data.get("options", [])),
-        "",  # вибраний варіант
-        data.get("time", ""),
-        "",  # username (буде заповнено при відповіді)
-        data.get("day", ""),
-        data.get("poll_type", ""),
-        data.get("recipients", ""),
-        data.get("username", "")
-    ])
-    await state.clear()
+    preview = f"<b>ОПИТУВАННЯ</b>\nПитання: {data['question']}\nВаріанти: {', '.join(data['options'])}\nТип: {data['poll_type']}\nЧас: {data['datetime']}"
+    if data["target"] == "user":
+        preview += f"\nUser: @{data['username']}"
+    await message.answer(preview, parse_mode="HTML")
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=[[types.KeyboardButton(text="✅ Підтвердити створення")],
+                  [types.KeyboardButton(text="❌ Відмінити")]],
+        resize_keyboard=True, one_time_keyboard=True
+    )
+    await message.answer("Підтвердити створення опитування?", reply_markup=kb)
+    await state.set_state(PollState.confirm)
+
+@dp.message(PollState.confirm)
+async def poll_confirm(message: types.Message, state: FSMContext):
+    if "підтвердити" in message.text.lower():
+        data = await state.get_data()
+        # Записати в Google Sheet
+        row = [
+            data.get("question"),
+            ";".join(data.get("options", [])),
+            data.get("poll_type"),
+            data.get("target"),
+            data.get("username", ""),
+            data.get("datetime"),
+            ""  # Тут буде записуватись вибраний варіант (результат)
+        ]
+        poll_sheet.append_row(row, value_input_option='USER_ENTERED')
+        await message.answer("✅ Опитування створене та заплановане!", reply_markup=types.ReplyKeyboardRemove())
+        await state.clear()
+    else:
+        await message.answer("❌ Відмінено.", reply_markup=types.ReplyKeyboardRemove())
+        await state.clear()
 
 # --- Логіка надсилання опитування ---
 days_map = {

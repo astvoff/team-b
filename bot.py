@@ -574,14 +574,15 @@ async def my_tasks(message: types.Message):
     today = get_today()
     records = day_sheet.get_all_records()
     my_tasks = [
-        row for row in records
+        (idx+2, row)
+        for idx, row in enumerate(records)
         if str(row.get("Дата")) == today and str(row.get("Telegram ID")) == str(user_id)
     ]
     if not my_tasks:
         await message.answer("У вас немає завдань на сьогодні.", reply_markup=user_menu)
         return
 
-    for row in my_tasks:
+    for row_idx, row in my_tasks:
         task = row.get("Завдання") or ""
         desc = row.get("Опис") or ""
         done = (row.get("Виконано", "").strip().upper() == "TRUE")
@@ -592,7 +593,7 @@ async def my_tasks(message: types.Message):
         text += f"<b>Статус:</b> {status}"
         kb = types.InlineKeyboardMarkup(
             inline_keyboard=[
-                [types.InlineKeyboardButton(text="✅ Виконано", callback_data=f"task_done_{row['_row']}")]
+                [types.InlineKeyboardButton(text="✅ Виконано", callback_data=f"task_done_{row_idx}")]
             ]
         )
         await message.answer(text, reply_markup=kb, parse_mode="HTML")
@@ -611,6 +612,13 @@ async def send_task_to_user(user_id, row, task, desc, status, row_idx):
         msg += f"<b>Опис:</b> {desc}\n"
     msg += f"<b>Статус:</b> {status_text}"
     await bot.send_message(user_id, msg, parse_mode="HTML", reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("task_done_"))
+async def mark_task_done_callback(call: types.CallbackQuery):
+    row_idx = int(call.data.replace("task_done_", ""))
+    day_sheet.update_cell(row_idx, 10, "TRUE")  # 10 — колонка "Виконано", підлаштуй якщо потрібно
+    await call.message.edit_text(call.message.text.replace("❌", "✅").replace("Не виконано", "Виконано"), parse_mode="HTML")
+    await call.answer("Відмічено як виконане ✅")
 
     text = "<b>Ваші завдання на сьогодні:</b>\n"
     for row in my_tasks:
@@ -648,6 +656,7 @@ async def task_done_callback(call: types.CallbackQuery):
     await call.answer("Завдання виконано!")
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
 
 @dp.message(lambda msg: msg.text and msg.text.lower() == "інформаційна база")
 async def show_information_categories(message: types.Message):

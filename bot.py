@@ -31,7 +31,6 @@ class ReportFSM(StatesGroup):
 # --- Константи ---
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-dp = Dispatcher()
 SHEET_KEY = os.getenv('SHEET_KEY')
 UA_TZ = timezone(timedelta(hours=3))  # Київ
 REMINDER_REPEAT_MINUTES = 20
@@ -510,6 +509,11 @@ async def admin_report_generate(message: types.Message, state: FSMContext):
             result += f"• <b>{task}</b> | {reminder} {' '.join(status_marks)}\n"
         result += "\n"
     await message.answer(result, parse_mode="HTML", reply_markup=admin_menu_kb)
+
+def prepend_rows_to_sheet(sheet, rows):
+    # Додає кожен рядок rows на другий рядок таблиці (відразу під заголовок)
+    for i, row in enumerate(rows):
+        sheet.insert_row(row, index=2 + i, value_input_option='USER_ENTERED')
     
 
 @dp.message(F.text == "Створити нагадування")
@@ -650,13 +654,6 @@ async def my_reminders(message: types.Message):
         text += f"— {time}: {reminder} {status}\n"
     await message.answer(text, parse_mode="HTML", reply_markup=user_menu)
 
-@dp.callback_query(lambda c: c.data.startswith("task_done_"))
-async def task_done_callback(call: types.CallbackQuery):
-    row = int(call.data.split("_")[-1])
-    mark_task_done(row)
-    await call.message.edit_text(call.message.text + "\n\n✅ Позначено як виконане.", reply_markup=None)
-    await call.answer("Завдання виконано!")
-
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
@@ -735,17 +732,16 @@ async def select_block(message: types.Message):
         await message.answer("Завдань не знайдено для цього блоку.", reply_markup=user_menu)
         return
     for t in tasks:
-        desc = t.get("Опис") or ""
+        desc = t.get("desc") or ""
         done = (t.get("done", "").strip().upper() == "TRUE")
         await send_task_with_status(user_id, t["task"], desc, done, t["row"])
 
-@dp.callback_query(F.data.startswith('done_task_'))
-async def done_task_callback(call: types.CallbackQuery):
-    row_idx = int(call.data.split('_')[-1])
-    # Оновлюємо стовпчик "Виконано" (10-та колонка, J)
+@dp.callback_query(F.data.startswith('task_done_'))
+async def mark_task_done_callback(call: types.CallbackQuery):
+    row_idx = int(call.data.replace("task_done_", ""))
     day_sheet.update_cell(row_idx, 10, "TRUE")
-    await call.message.edit_text(call.message.text.replace("❌ Не виконано", "✅ Виконано"), parse_mode="HTML")
-    await call.answer("Завдання відмічено як виконане ✅")
+    await call.message.edit_text(call.message.text.replace("❌", "✅").replace("Не виконано", "Виконано"), parse_mode="HTML")
+    await call.answer("Відмічено як виконане ✅")
 
 @dp.message(StateFilter('*'), F.text == "Відмінити дію")
 async def universal_back(message: types.Message, state: FSMContext):

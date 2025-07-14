@@ -737,21 +737,13 @@ async def select_block(message: types.Message):
 
     seen_tasks = set()
     for t in tasks:
-        task_name = t["task"].strip().lower()
+        task_name = (t["task"] or "").strip().lower()
         if task_name in seen_tasks:
             continue
         seen_tasks.add(task_name)
         desc = t.get("Опис") or t.get("desc") or ""
         done = (t.get("done", "").strip().upper() == "TRUE")
         await send_task_with_status(user_id, t["task"], desc, done, t["row"])
-    if not tasks:
-        await message.answer("Завдань не знайдено для цього блоку.", reply_markup=user_menu)
-        return
-    for t in tasks:
-        desc = t.get("desc") or ""
-        done = (t.get("done", "").strip().upper() == "TRUE")
-        await send_task_with_status(user_id, t["task"], desc, done, t["row"])
-    await message.answer("⬅️ Повернулись до головного меню.", reply_markup=user_menu)
 
 @dp.callback_query(F.data.startswith('task_done_'))
 async def mark_task_done_callback(call: types.CallbackQuery):

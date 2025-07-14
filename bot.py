@@ -255,6 +255,17 @@ def schedule_all_block_tasks_for_today():
     for user_id, tasks in user_tasks.items():
         schedule_reminders_for_user(user_id, tasks)
 
+def refresh_block_tasks():
+    print("[REFRESH] Оновлення завдань з Google Sheet")
+    schedule_all_block_tasks_for_today()
+
+scheduler.add_job(
+    refresh_block_tasks,
+    'interval',
+    minutes=10,  # або minutes=30 якщо треба частіше
+    id="refresh-block-tasks"
+)
+
 # --- Загальні нагадування (розсилка) ---
 def get_all_staff_user_ids():
     ids = []
@@ -367,6 +378,13 @@ def schedule_general_reminders(main_loop):
             )
         except Exception as e:
             print(f"[ERROR][schedule_general_reminders] Exception при add_job: {e}")
+
+scheduler.add_job(
+    lambda: schedule_general_reminders(asyncio.get_event_loop()),
+    'interval',
+    minutes=10,
+    id="refresh-general-reminders"
+)
 
 # --- Меню ---
 user_menu = types.ReplyKeyboardMarkup(
@@ -803,6 +821,13 @@ async def main():
     scheduler.start()
     schedule_all_block_tasks_for_today()
     schedule_polls()
+    scheduler.add_job(
+        refresh_block_tasks,
+        'interval',
+        hours=1,
+        id="refresh-block-tasks",
+        replace_existing=True
+    )
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

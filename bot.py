@@ -11,7 +11,15 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from datetime import datetime, timedelta, timezone
 
+class ReminderFSM(StatesGroup):
+    wait_text = State()
+    wait_time = State()
+    
 # --- Константи ---
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -295,6 +303,46 @@ admin_menu_kb = types.ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
+
+@dp.message(F.text == "Створити нагадування")
+async def start_reminder(message: types.Message, state: FSMContext):
+    await state.set_state(ReminderFSM.wait_text)
+    await message.answer("Введіть текст нагадування:")
+
+@dp.message(ReminderFSM.wait_text)
+async def get_text(message: types.Message, state: FSMContext):
+    await state.update_data(text=message.text)
+    await state.set_state(ReminderFSM.wait_time)
+    await message.answer("Введіть час (ГГ:ХХ):")
+
+@dp.message(ReminderFSM.wait_time)
+async def get_time(message: types.Message, state: FSMContext):
+    time_str = message.text.strip()
+    try:
+        remind_time = datetime.strptime(f"{datetime.now().date()} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=UA_TZ)
+        if remind_time < datetime.now(UA_TZ):
+            await message.answer("Цей час вже минув.")
+            return
+    except Exception:
+        await message.answer("Некоректний формат. Введіть у форматі ГГ:ХХ (наприклад, 09:25):")
+        return
+    data = await state.get_data()
+    text = data.get("text")
+    user_id = message.from_user.id
+
+    async def send_personal_reminder():
+        await bot.send_message(user_id, f"🔔 <b>Ваше нагадування</b>:\n{text}", parse_mode="HTML")
+
+    scheduler.add_job(
+        send_personal_reminder,
+        trigger="date",
+        run_date=remind_time,
+        id=f"personal-{user_id}-{int(remind_time.timestamp())}",
+        replace_existing=False
+    )
+    await message.answer(f"Нагадування створено на {time_str}!\nТекст: {text}")
+    await state.clear()
+
 
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):

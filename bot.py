@@ -736,19 +736,20 @@ async def select_block(message: types.Message):
     block_num = message.text.split()[0]
     user_id = message.from_user.id
     today = get_today()
-    # 1. Назначаємо користувача на блок
+
+    # 1. Призначити користувача на блок (записати в Google Sheets)
     await assign_user_to_block(block_num, user_id)
-    # 2. Оновлюємо записи
+    # 2. Ще раз зчитати дані з таблиці (новий запис уже є!)
     records = day_sheet.get_all_records()
+
+    # 3. Агрегуємо завдання для юзера по цьому блоку
     agg = aggregate_tasks(records, today, block_num, user_id)
-    # 3. Якщо завдань нема
     if not agg:
         await message.answer("Завдань не знайдено для цього блоку.", reply_markup=user_menu)
         return
-    # 4. Відправляємо завдання (по одному, як у твоєму my_tasks)
-    seen_tasks = set()
+
+    # 4. Відправити всі завдання
     for (task, desc, block), data in agg.items():
-        if not task: continue
         status_marks = " ".join(["✅" if d else "❌" for d in data['done_cols']])
         text = (
             f"<b>Завдання:</b> <b>{task}</b>\n"
@@ -763,8 +764,8 @@ async def select_block(message: types.Message):
                 ]
             )
         await message.answer(text, reply_markup=kb, parse_mode="HTML")
-        seen_tasks.add(task)
-    # 5. Відправляємо нагадування, якщо треба (дивись свій код)
+
+    # 5. Додатково — відправити нагадування по часу
     reminders = []
     for v in agg.values():
         reminders.extend([(tm, rem) for tm, rem, _, _ in v['reminders']])

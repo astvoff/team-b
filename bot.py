@@ -128,7 +128,7 @@ async def assign_user_to_block(block_num, user_id):
     name = user.username or user.full_name or str(user_id)
     for i, row in enumerate(records):
         if str(row["Дата"]) == today and str(row["Блок"]) == str(block_num) and not row["Telegram ID"]:
-            day_sheet.await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)
 update_cell(i+2, 8, str(user_id))  # Telegram ID
             day_sheet.await asyncio.sleep(0.5)
 update_cell(i+2, 9, name)          # Імʼя

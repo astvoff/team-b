@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+await asyncio.sleep(1)
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
@@ -109,14 +110,17 @@ async def assign_user_to_block(block_num, user_id):
     records = day_sheet.get_all_records()
     user = await bot.get_chat(user_id)
     name = user.username or user.full_name or str(user_id)
+    updates = []
     for i, row in enumerate(records):
         if str(row["Дата"]) == today and str(row["Блок"]) == str(block_num) and not row["Telegram ID"]:
-            day_sheet.update_cell(i+2, 8, str(user_id))  # Telegram ID
-            day_sheet.update_cell(i+2, 9, name)          # Імʼя
+            updates.append({'range': f'H{i+2}', 'values': [[str(user_id)]]})   # 8-ма колонка
+            updates.append({'range': f'I{i+2}', 'values': [[name]]})           # 9-та колонка
+    if updates:
+        day_sheet.batch_update([{'range': u['range'], 'values': u['values']} for u in updates])
     user_sessions[user_id] = block_num
 
 def mark_task_done(row):
-    day_sheet.update_cell(row, 10, "TRUE")
+    day_sheet.batch_update([{'range': f'J{row}', 'values': [["TRUE"]]}])
 
 async def send_reminder(user_id, task, reminder, row, idx=1):
     kb = types.InlineKeyboardMarkup(
@@ -166,9 +170,10 @@ async def notify_admin_if_needed(user_id, row, task, reminder, block):
 async def done_callback(call: types.CallbackQuery):
     parts = call.data.split('_')
     row = int(parts[1])
-    idx = int(parts[2])
+    idx = int(parts[2])  # індекс нагадування
     col = 10 + (idx - 1)
-    day_sheet.update_cell(row, col, "TRUE")
+    col_letter = chr(ord('A') + col - 1)
+    day_sheet.batch_update([{'range': f'{col_letter}{row}', 'values': [["TRUE"]]}])
     await call.message.edit_text(
         call.message.text.replace("нагадування надійшло", "Успішне"),
         reply_markup=None,
@@ -465,7 +470,7 @@ async def my_tasks(message: types.Message):
 @dp.callback_query(F.data.startswith("task_done_"))
 async def mark_task_done_callback(call: types.CallbackQuery):
     row_idx = int(call.data.replace("task_done_", ""))
-    day_sheet.update_cell(row_idx, 10, "TRUE")
+    day_sheet.batch_update([{'range': f'J{row_idx}', 'values': [["TRUE"]]}])
     await call.message.edit_text(call.message.text.replace("❌", "✅").replace("Не виконано", "Виконано"), parse_mode="HTML")
     await call.answer("Відмічено як виконане ✅")
 

@@ -33,8 +33,8 @@ load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 SHEET_KEY = os.getenv('SHEET_KEY')
 UA_TZ = timezone(timedelta(hours=3))  # Київ
-REMINDER_REPEAT_MINUTES = 30
-ADMIN_NOTIFY_MINUTES = 40
+REMINDER_REPEAT_MINUTES = 20
+ADMIN_NOTIFY_MINUTES = 30
 ADMIN_IDS = [438830182]
 logging.basicConfig(level=logging.INFO)
 
@@ -167,22 +167,17 @@ async def notify_admin_if_needed(user_id, row, task, reminder, block):
     value = day_sheet.cell(row, 10).value
     print(f"[DEBUG][notify_admin_if_needed] value={value}")
     if value != "TRUE":
-        name = get_full_name_by_id(user_id)  # ЗАМІНИВ
-        print(f"[ADMIN_NOTIFY] Sending to admins: {ADMIN_IDS}")
+        name = get_staff_name_by_id(user_id)
         for admin_id in ADMIN_IDS:
-            try:
-                await bot.send_message(
-                    admin_id,
-                    f"❗️ <b>Завдання НЕ виконано!</b>\n"
-                    f"Користувач: {name}\n"
-                    f"Блок: {block}\n"
-                    f"Завдання: {task}\n"
-                    f"Нагадування: {reminder}",
-                    parse_mode="HTML"
-                )
-                print(f"[ADMIN_NOTIFY] Sent to {admin_id}")
-            except Exception as e:
-                print(f"[ADMIN_NOTIFY] Failed to send to {admin_id}: {e}")
+            await bot.send_message(
+                admin_id,
+                f"❗️ <b>Завдання НЕ виконано!</b>\n"
+                f"Користувач: {name}\n"
+                f"Блок: {block}\n"
+                f"Завдання: {task}\n"
+                f"Нагадування: {reminder}",
+                parse_mode="HTML"
+            )
 
 @dp.callback_query(F.data.startswith('done_'))
 async def done_callback(call: types.CallbackQuery):

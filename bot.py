@@ -101,25 +101,6 @@ def get_blocks_for_today():
     records = day_sheet.get_all_records()
     return sorted(list(set(str(row["Блок"]) for row in records if str(row["Дата"]) == today)))
 
-def get_tasks_for_block(block_num, user_id=None):
-    today = get_today()
-    records = day_sheet.get_all_records()
-    tasks = [
-        {
-            "row": idx + 2,
-            "task": row["Завдання"],
-            "reminder": row["Нагадування"],
-            "desc": row.get("Опис", ""),
-            "time": row["Час"],
-            "done": row.get("Виконано", ""),
-            "block": row["Блок"]
-        }
-        for idx, row in enumerate(records)
-        if str(row.get("Дата")) == today and str(row.get("Блок")) == str(block_num)
-           and (user_id is None or str(row.get("Telegram ID")) == str(user_id))
-    ]
-    return tasks
-
 async def assign_user_to_block(block_num, user_id):
     today = get_today()
     records = day_sheet.get_all_records()
@@ -157,7 +138,7 @@ async def repeat_reminder_if_needed(user_id, row, task, reminder, block):
             user_id,
             f"⏰ Завдання досі не виконано:\n\n"
             f"Блок {block}\n"
-            f"Завдання: {task}\n"
+            f"Завдання: {task}\n"а
             f"Нагадування: {reminder}\n\n"
             f"Не забудь натиснути «✅ Виконано»!"
         )
@@ -199,51 +180,81 @@ async def done_callback(call: types.CallbackQuery):
     )
     await call.answer("Відмічено як виконане ✅")
 
-def schedule_reminders_for_user(user_id, tasks):
-    for t in tasks:
-        if not t["time"]:
-            continue
-        times = [tm.strip() for tm in t["time"].split(",") if tm.strip()]
-        for i, time_str in enumerate(times):
+def schedule_reminders_for_user(user_id, agg):
+    # agg — результат aggregate_tasks
+    for (task, desc, block), data in agg.items():
+        for i, (tm, reminder, row, idx) in enumerate(data['reminders']):
             try:
-                remind_time = datetime.strptime(f"{get_today()} {time_str}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
+                remind_time = datetime.strptime(f"{get_today()} {tm}", '%Y-%m-%d %H:%M').replace(tzinfo=UA_TZ)
             except Exception:
                 continue
             now = now_ua()
             if remind_time <= now:
                 continue
-            block = t.get("block") or t.get("Блок") or "?"
             scheduler.add_job(
                 send_reminder,
                 'date',
                 run_date=remind_time,
-                args=[user_id, t["task"], t["reminder"], t["row"], i+1],  # додати i+1
-                id=f"{user_id}-{t['row']}-{i+1}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
+                args=[user_id, task, reminder, row, idx+1],
+                id=f"{user_id}-{row}-{idx+1}-{int(remind_time.timestamp())}-{tm.replace(':','')}",
                 replace_existing=True
             )
             scheduler.add_job(
                 repeat_reminder_if_needed,
                 'date',
                 run_date=remind_time + timedelta(minutes=REMINDER_REPEAT_MINUTES),
-                args=[user_id, t["row"], t["task"], t["reminder"], block],
-                id=f"repeat-{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
+                args=[user_id, row, task, reminder, block],
+                id=f"repeat-{user_id}-{row}-{int(remind_time.timestamp())}-{tm.replace(':','')}",
                 replace_existing=True
             )
             scheduler.add_job(
                 notify_admin_if_needed,
                 'date',
                 run_date=remind_time + timedelta(minutes=ADMIN_NOTIFY_MINUTES),
-                args=[user_id, t["row"], t["task"], t["reminder"], block],
-                id=f"admin-{user_id}-{t['row']}-{int(remind_time.timestamp())}-{time_str.replace(':','')}",
+                args=[user_id, row, task, reminder, block],
+                id=f"admin-{user_id}-{row}-{int(remind_time.timestamp())}-{tm.replace(':','')}",
                 replace_existing=True
             )
+
+def aggregate_tasks(records, today, block_num, user_id=None):
+    # Ключ: (task, desc, block)
+    agg = defaultdict(lambda: {
+        'desc': '',
+        'reminders': [],
+        'row_idxs': [],
+        'done_cols': [],    # для статусів виконання
+    })
+    for idx, row in enumerate(records):
+        if str(row.get("Дата")) != today: continue
+        if str(row.get("Блок")) != str(block_num): continue
+        if user_id and str(row.get("Telegram ID")) != str(user_id): continue
+        task = (row.get("Завдання") or "").strip()
+        desc = (row.get("Опис") or "").strip()
+        reminder = (row.get("Нагадування") or "").strip()
+        times = [t.strip() for t in (row.get("Час") or "").split(",") if t.strip()]
+        # Ключ для агрегування (щоб не було дубляжу)
+        key = (task, desc, block_num)
+        agg[key]['desc'] = desc
+        agg[key]['row_idxs'].append(idx + 2)
+        # Додаємо всі нагадування по цьому завданню
+        if times and reminder:
+            for i, tm in enumerate(times):
+                agg[key]['reminders'].append((tm, reminder, idx+2, i))  # (час, текст, рядок, індекс нагад.)
+                # Статус виконання для кожного часу окремо
+                col = "Виконано" if i == 0 else f"Виконано ({i+1})"
+                done = (row.get(col, "").strip().upper() == "TRUE")
+                agg[key]['done_cols'].append(done)
+        else:
+            # Якщо немає часу/нагадування, просто дивимось статус виконання
+            val = (row.get("Виконано") or "").strip().upper()
+            agg[key]['done_cols'].append(val == "TRUE")
+    return agg
 
 def schedule_all_block_tasks_for_today():
     today = get_today()
     records = day_sheet.get_all_records()
-    # Словник: user_id -> список задач
     user_tasks = {}
-    for idx, row in enumerate(records):
+    for row in records:
         if str(row.get("Дата")) != today:
             continue
         user_id = row.get("Telegram ID")
@@ -252,33 +263,13 @@ def schedule_all_block_tasks_for_today():
                 user_id = int(user_id)
             except Exception:
                 continue
-            # Додаємо задачу користувачу
-            task = {
-                "row": idx + 2,
-                "task": row.get("Завдання"),
-                "reminder": row.get("Нагадування"),
-                "time": row.get("Час"),
-                "done": row.get("Виконано", ""),
-                "block": row.get("Блок")
-            }
             if user_id not in user_tasks:
                 user_tasks[user_id] = []
-            user_tasks[user_id].append(task)
-    # Для кожного user_id ставимо нагадування
-    for user_id, tasks in user_tasks.items():
-        schedule_reminders_for_user(user_id, tasks)
-
-def refresh_block_tasks():
-    print("[REFRESH] Оновлення завдань з Google Sheet")
-    schedule_all_block_tasks_for_today()
-
-scheduler.add_job(
-    refresh_block_tasks,
-    'interval',
-    minutes=10,  # або minutes=30 якщо треба частіше
-    id="refresh-block-tasks"
-)
-
+            user_tasks[user_id].append(row)
+    for user_id, tasks_rows in user_tasks.items():
+        agg = aggregate_tasks(tasks_rows, today, block_num=None, user_id=user_id)
+        schedule_reminders_for_user(user_id, agg)
+        
 # --- Загальні нагадування (розсилка) ---
 def get_all_staff_user_ids():
     ids = []
@@ -742,48 +733,44 @@ async def select_block(message: types.Message):
     user_id = message.from_user.id
     today = get_today()
     records = day_sheet.get_all_records()
-    for rec in records:
-        if str(rec["Дата"]) == today and str(rec["Блок"]) == str(block_num) and rec["Telegram ID"]:
-            if str(rec["Telegram ID"]) == str(user_id):
-                await message.answer("Цей блок вже закріплений за вами.", reply_markup=user_menu)
-                return
-            else:
-                await message.answer("Цей блок вже зайнятий іншим працівником.", reply_markup=user_menu)
-                return
+    # ... (перевірка що блок не зайнятий залишаєш)
+
     await assign_user_to_block(block_num, user_id)
-    tasks = get_tasks_for_block(block_num, user_id)
-    if not tasks:
+    agg = aggregate_tasks(records, today, block_num, user_id)
+
+    if not agg:
         await message.answer("Завдань не знайдено для цього блоку.", reply_markup=user_menu)
         return
 
-    # 1. Унікальні завдання
-    seen_tasks = set()
-    for t in tasks:
-        task_name = (t["task"] or "").strip().lower()
-        if task_name in seen_tasks:
-            continue
-        seen_tasks.add(task_name)
-        desc = t.get("Опис") or t.get("desc") or ""
-        done = (t.get("done", "").strip().upper() == "TRUE")
-        await send_task_with_status(user_id, t["task"], desc, done, t["row"])
-    
-    # 2. Унікальні нагадування
-    seen_reminders = set()
-    reminders_text = "<b>Нагадування для вашого блоку:</b>\n"
-    for t in tasks:
-        reminder = (t.get("reminder") or "").strip()
-        time = (t.get("time") or "").strip()
-        if not reminder:
-            continue
-        reminder_key = reminder.lower() + "|" + time
-        if reminder_key in seen_reminders:
-            continue
-        seen_reminders.add(reminder_key)
-        if time:
-            reminders_text += f"— {time}: {reminder}\n"
-        else:
-            reminders_text += f"— {reminder}\n"
-    if len(seen_reminders) > 0:
+    # Відправляємо по одному унікальному завданню
+    for (task, desc, block), data in agg.items():
+        status_marks = " ".join(["✅" if d else "❌" for d in data['done_cols']])
+        text = (
+            f"<b>Завдання:</b> <b>{task}</b>\n"
+            f"<u>Зона відповідальності:</u>\n{desc}\n"
+            f"<b>Статус:</b> <b>{status_marks}</b>"
+        )
+        # Якщо хоч одне не виконано — показуємо кнопку
+        kb = None
+        if not all(data['done_cols']):
+            # тут row_idx — перший з агрегованих рядків (або можеш зробити окремо для кожного нагадування)
+            kb = types.InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [types.InlineKeyboardButton(text="✅ Виконано", callback_data=f"task_done_{data['row_idxs'][0]}")]
+                ]
+            )
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+    # Відправляємо всі унікальні нагадування (по часу)
+    reminders = []
+    for v in agg.values():
+        reminders.extend([(tm, rem) for tm, rem, _, _ in v['reminders']])
+    # Сортуємо по часу
+    reminders = sorted(set(reminders), key=lambda x: x[0])
+    if reminders:
+        reminders_text = "<b>Нагадування для вашого блоку:</b>\n"
+        for tm, rem in reminders:
+            reminders_text += f"— {tm}: {rem}\n"
         await message.answer(reminders_text, parse_mode="HTML", reply_markup=user_menu)
 
 @dp.callback_query(F.data.startswith('task_done_'))

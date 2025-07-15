@@ -1,6 +1,6 @@
 import os
 import logging
-import asyncio
+import asynciof
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
@@ -1040,6 +1040,10 @@ def schedule_polls():
 
 
 # --- Запуск ---
+def refresh_block_tasks():
+    print("[REFRESH] Оновлення завдань з Google Sheet")
+    schedule_all_block_tasks_for_today()
+
 async def main():
     loop = asyncio.get_running_loop()
     schedule_general_reminders(loop)

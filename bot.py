@@ -1049,6 +1049,65 @@ def schedule_polls():
             replace_existing=True
         )
 
+def schedule_general_reminders(main_loop):
+    try:
+        rows = general_reminders_sheet.get_all_records()
+    except Exception as e:
+        print(f"[ERROR][schedule_general_reminders] Exception при get_all_records: {e}")
+        rows = []
+    days_map = {
+        "понеділок": 0, "вівторок": 1, "середа": 2,
+        "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
+        "субота": 5, "неділя": 6
+    }
+
+    def run_async_job(text, ids_func):
+        try:
+            ids = ids_func()
+            asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids), main_loop)
+        except Exception as e:
+            print(f"[ERROR][run_async_job] Exception: {e}")
+
+    for row in rows:
+        day = str(row.get('День', '')).strip().lower()
+        time_str = str(row.get('Час', '')).strip()
+        text = str(row.get('Текст', '')).strip()
+        send_all = is_true(row.get('Загальна', ''))
+        send_shift = is_true(row.get('Розсилка, хто на зміні', ''))
+        send_individual = is_true(row.get('Індивідуальна розсилка', ''))
+        username = str(row.get('Username', '')).strip()
+        if not day or not time_str or not text or not (send_all or send_shift or send_individual):
+            continue
+        weekday_num = days_map.get(day)
+        if weekday_num is None:
+            continue
+        try:
+            hour, minute = map(int, time_str.split(":"))
+        except Exception as e:
+            continue
+        if send_all:
+            ids_func = get_all_staff_user_ids
+        elif send_shift:
+            ids_func = get_today_users
+        elif send_individual and username:
+            _username = username
+            ids_func = lambda _username=_username: get_staff_user_ids_by_username(_username)
+        else:
+            continue
+        try:
+            scheduler.add_job(
+                run_async_job,
+                'cron',
+                day_of_week=weekday_num,
+                hour=hour,
+                minute=minute,
+                args=[text, ids_func],
+                id=f"general-{day}-{hour}-{minute}-{username or 'all'}",
+                replace_existing=True
+            )
+        except Exception as e:
+            print(f"[ERROR][schedule_general_reminders] Exception при add_job: {e}")
+
 
 # --- Запуск ---
 async def main():

@@ -138,10 +138,10 @@ async def repeat_reminder_if_needed(user_id, row, task, reminder, block):
             user_id,
             f"⏰ Завдання досі не виконано:\n\n"
             f"Блок {block}\n"
-            f"Завдання: {task}\n"а
+            f"Завдання: {task}\n"
             f"Нагадування: {reminder}\n\n"
             f"Не забудь натиснути «✅ Виконано»!"
-        )
+)
 
 async def notify_admin_if_needed(user_id, row, task, reminder, block):
     print(f"[DEBUG][notify_admin_if_needed] {user_id=}, {row=}, {task=}")

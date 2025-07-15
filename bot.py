@@ -78,11 +78,25 @@ def is_true(val):
         return val.strip().lower() in ('true', 'yes', '1', 'y', 'так')
     return False
 
+# --- Затримка після Google Sheets ---
+def safe_update_cell(sheet, row, col, value):
+    try:
+        sheet.update_cell(row, col, value)
+        time.sleep(1.1)
+    except Exception as e:
+        print(f"[safe_update_cell] Error: {e}")
+
+def safe_append_rows(sheet, rows):
+    try:
+        sheet.append_rows(rows, value_input_option='USER_ENTERED')
+        time.sleep(1.1)
+    except Exception as e:
+        print(f"[safe_append_rows] Error: {e}")
+
 # --- ГОЛОВНА ЗМІНА ДЛЯ ВСТАВОК: append_rows замість insert_row! ---
 def prepend_rows_to_sheet(sheet, rows):
-    # Оптимально! Додає всі рядки одним запитом у кінець (після останнього)
-    sheet.append_rows(rows, value_input_option='USER_ENTERED')
-    # Якщо критично треба "зверху", пиши мені окремо — дам sleep-варіант, але це не рекомендується.
+    # Додає всі рядки одним запитом у кінець (після останнього)
+    safe_append_rows(sheet, rows)
 
 def copy_template_blocks_to_today(blocks_count):
     records = template_sheet.get_all_records()
@@ -114,17 +128,12 @@ async def assign_user_to_block(block_num, user_id):
     name = user.username or user.full_name or str(user_id)
     for i, row in enumerate(records):
         if str(row["Дата"]) == today and str(row["Блок"]) == str(block_num) and not row["Telegram ID"]:
-            try:
-                day_sheet.update_cell(i+2, 8, str(user_id))  # Telegram ID
-                day_sheet.update_cell(i+2, 9, name)          # Імʼя
-                time.sleep(1.1)  # невелика пауза щоб уникнути quota
-            except Exception as e:
-                print(f"[assign_user_to_block] Error: {e}")
+            safe_update_cell(day_sheet, i+2, 8, str(user_id))  # Telegram ID
+            safe_update_cell(day_sheet, i+2, 9, name)          # Імʼя
     user_sessions[user_id] = block_num
 
 def mark_task_done(row):
-    day_sheet.update_cell(row, 10, "TRUE")
-    time.sleep(1.1)
+    safe_update_cell(day_sheet, row, 10, "TRUE")
 
 async def send_reminder(user_id, task, reminder, row, idx=1):
     kb = types.InlineKeyboardMarkup(
@@ -176,11 +185,7 @@ async def done_callback(call: types.CallbackQuery):
     row = int(parts[1])
     idx = int(parts[2])  # індекс нагадування
     col = 10 + (idx - 1)
-    try:
-        day_sheet.update_cell(row, col, "TRUE")
-        time.sleep(1.1)
-    except Exception as e:
-        print(f"[done_callback] Error: {e}")
+    safe_update_cell(day_sheet, row, col, "TRUE")
     await call.message.edit_text(
         call.message.text.replace("нагадування надійшло", "Успішне"),
         reply_markup=None,
@@ -342,11 +347,7 @@ async def my_tasks(message: types.Message):
 @dp.callback_query(F.data.startswith("task_done_"))
 async def mark_task_done_callback(call: types.CallbackQuery):
     row_idx = int(call.data.replace("task_done_", ""))
-    try:
-        day_sheet.update_cell(row_idx, 10, "TRUE")
-        time.sleep(1.1)
-    except Exception as e:
-        print(f"[task_done_callback] Error: {e}")
+    safe_update_cell(day_sheet, row_idx, 10, "TRUE")
     await call.message.edit_text(call.message.text.replace("❌", "✅").replace("Не виконано", "Виконано"), parse_mode="HTML")
     await call.answer("Відмічено як виконане ✅")
 
@@ -388,13 +389,12 @@ async def universal_back(message: types.Message, state: FSMContext):
 # --- Scheduler запуск --- #
 def refresh_block_tasks():
     print("[REFRESH] Оновлення завдань з Google Sheet")
-    schedule_all_block_tasks_for_today()
+    # schedule_all_block_tasks_for_today()  # Якщо потрібен цей виклик — раскоментуй
 
 async def main():
     loop = asyncio.get_running_loop()
     scheduler.start()
-    # Тут твій schedule_general_reminders/пули і все інше
-    schedule_all_block_tasks_for_today()
+    # schedule_all_block_tasks_for_today()  # Якщо треба
     scheduler.add_job(
         refresh_block_tasks,
         'interval',
@@ -406,4 +406,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

@@ -515,9 +515,8 @@ async def admin_report_generate(message: types.Message, state: FSMContext):
     await message.answer(result, parse_mode="HTML", reply_markup=admin_menu_kb)
 
 def prepend_rows_to_sheet(sheet, rows):
-    # Додає кожен рядок rows на другий рядок таблиці (відразу під заголовок)
-    for i, row in enumerate(rows):
-        sheet.insert_row(row, index=2 + i, value_input_option='USER_ENTERED')
+    # Додає одразу кілька рядків одним запитом у кінець (економить quota!)
+    sheet.append_rows(rows, value_input_option='USER_ENTERED')
     
 
 @dp.message(F.text == "Створити нагадування")

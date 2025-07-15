@@ -1,6 +1,6 @@
 import os
 import logging
-import asynciof
+import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
@@ -11,7 +11,10 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
+from collections import defaultdict
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
+# --- FSM ---
 class ReminderFSM(StatesGroup):
     wait_text = State()
     wait_time = State()
@@ -27,7 +30,7 @@ class PollState(StatesGroup):
 
 class ReportFSM(StatesGroup):
     waiting_date = State()
-    
+
 # --- Константи ---
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -55,8 +58,6 @@ staff_sheet = gs.open_by_key(SHEET_KEY).worksheet(STAFF_SHEET)
 general_reminders_sheet = gs.open_by_key(SHEET_KEY).worksheet(GENERAL_REMINDERS_SHEET)
 poll_sheet = gs.open_by_key(SHEET_KEY).worksheet(POLL_SHEET)
 
-
-
 # --- Telegram bot ---
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -76,15 +77,17 @@ def is_true(val):
         return val.strip().lower() in ('true', 'yes', '1', 'y', 'так')
     return False
 
+def prepend_rows_to_sheet(sheet, rows):
+    for i, row in enumerate(rows):
+        sheet.insert_row(row, index=2 + i, value_input_option='USER_ENTERED')
+
 def copy_template_blocks_to_today(blocks_count):
     records = template_sheet.get_all_records()
     today = get_today()
     existing = day_sheet.get_all_records()
-    # Перевіряємо, чи вже є завдання на сьогодні з цим blocks_count
     for row in existing:
         if str(row["Дата"]) == today and str(row["Кількість блоків"]) == str(blocks_count):
-            return  # вже є — не додаємо
-    # Додаємо нові рядки тільки для сьогоднішньої дати
+            return
     new_rows = []
     for row in records:
         if str(row["Кількість блоків"]) == str(blocks_count):
@@ -130,9 +133,7 @@ async def send_reminder(user_id, task, reminder, row, idx=1):
     user_sessions[user_id] = row
 
 async def repeat_reminder_if_needed(user_id, row, task, reminder, block):
-    print(f"[DEBUG][repeat_reminder_if_needed] {user_id=}, {row=}, {task=}")
     value = day_sheet.cell(row, 10).value
-    print(f"[DEBUG][repeat_reminder_if_needed] value={value}")
     if value != "TRUE":
         await bot.send_message(
             user_id,
@@ -141,15 +142,12 @@ async def repeat_reminder_if_needed(user_id, row, task, reminder, block):
             f"Завдання: {task}\n"
             f"Нагадування: {reminder}\n\n"
             f"Не забудь натиснути «✅ Виконано»!"
-)
+        )
 
 async def notify_admin_if_needed(user_id, row, task, reminder, block):
-    print(f"[DEBUG][notify_admin_if_needed] {user_id=}, {row=}, {task=}")
     value = day_sheet.cell(row, 10).value
-    print(f"[DEBUG][notify_admin_if_needed] value={value}")
     if value != "TRUE":
-        name = get_full_name_by_id(user_id)  # ЗАМІНИВ
-        print(f"[ADMIN_NOTIFY] Sending to admins: {ADMIN_IDS}")
+        name = get_full_name_by_id(user_id)
         for admin_id in ADMIN_IDS:
             try:
                 await bot.send_message(
@@ -161,7 +159,6 @@ async def notify_admin_if_needed(user_id, row, task, reminder, block):
                     f"Нагадування: {reminder}",
                     parse_mode="HTML"
                 )
-                print(f"[ADMIN_NOTIFY] Sent to {admin_id}")
             except Exception as e:
                 print(f"[ADMIN_NOTIFY] Failed to send to {admin_id}: {e}")
 
@@ -169,8 +166,7 @@ async def notify_admin_if_needed(user_id, row, task, reminder, block):
 async def done_callback(call: types.CallbackQuery):
     parts = call.data.split('_')
     row = int(parts[1])
-    idx = int(parts[2])  # індекс нагадування
-    # Визначаємо номер стовпця: 10 - 'Виконано', 11 - 'Виконано (2)', 12 - 'Виконано (3)' ...
+    idx = int(parts[2])
     col = 10 + (idx - 1)
     day_sheet.update_cell(row, col, "TRUE")
     await call.message.edit_text(
@@ -180,8 +176,36 @@ async def done_callback(call: types.CallbackQuery):
     )
     await call.answer("Відмічено як виконане ✅")
 
+def aggregate_tasks(records, today, block_num, user_id=None):
+    agg = defaultdict(lambda: {
+        'desc': '',
+        'reminders': [],
+        'row_idxs': [],
+        'done_cols': [],
+    })
+    for idx, row in enumerate(records):
+        if str(row.get("Дата")) != today: continue
+        if str(row.get("Блок")) != str(block_num): continue
+        if user_id and str(row.get("Telegram ID")) != str(user_id): continue
+        task = (row.get("Завдання") or "").strip()
+        desc = (row.get("Опис") or "").strip()
+        reminder = (row.get("Нагадування") or "").strip()
+        times = [t.strip() for t in (row.get("Час") or "").split(",") if t.strip()]
+        key = (task, desc, block_num)
+        agg[key]['desc'] = desc
+        agg[key]['row_idxs'].append(idx + 2)
+        if times and reminder:
+            for i, tm in enumerate(times):
+                agg[key]['reminders'].append((tm, reminder, idx+2, i))
+                col = "Виконано" if i == 0 else f"Виконано ({i+1})"
+                done = (row.get(col, "").strip().upper() == "TRUE")
+                agg[key]['done_cols'].append(done)
+        else:
+            val = (row.get("Виконано") or "").strip().upper()
+            agg[key]['done_cols'].append(val == "TRUE")
+    return agg
+
 def schedule_reminders_for_user(user_id, agg):
-    # agg — результат aggregate_tasks
     for (task, desc, block), data in agg.items():
         for i, (tm, reminder, row, idx) in enumerate(data['reminders']):
             try:
@@ -216,181 +240,27 @@ def schedule_reminders_for_user(user_id, agg):
                 replace_existing=True
             )
 
-def aggregate_tasks(records, today, block_num, user_id=None):
-    # Ключ: (task, desc, block)
-    agg = defaultdict(lambda: {
-        'desc': '',
-        'reminders': [],
-        'row_idxs': [],
-        'done_cols': [],    # для статусів виконання
-    })
-    for idx, row in enumerate(records):
-        if str(row.get("Дата")) != today: continue
-        if str(row.get("Блок")) != str(block_num): continue
-        if user_id and str(row.get("Telegram ID")) != str(user_id): continue
-        task = (row.get("Завдання") or "").strip()
-        desc = (row.get("Опис") or "").strip()
-        reminder = (row.get("Нагадування") or "").strip()
-        times = [t.strip() for t in (row.get("Час") or "").split(",") if t.strip()]
-        # Ключ для агрегування (щоб не було дубляжу)
-        key = (task, desc, block_num)
-        agg[key]['desc'] = desc
-        agg[key]['row_idxs'].append(idx + 2)
-        # Додаємо всі нагадування по цьому завданню
-        if times and reminder:
-            for i, tm in enumerate(times):
-                agg[key]['reminders'].append((tm, reminder, idx+2, i))  # (час, текст, рядок, індекс нагад.)
-                # Статус виконання для кожного часу окремо
-                col = "Виконано" if i == 0 else f"Виконано ({i+1})"
-                done = (row.get(col, "").strip().upper() == "TRUE")
-                agg[key]['done_cols'].append(done)
-        else:
-            # Якщо немає часу/нагадування, просто дивимось статус виконання
-            val = (row.get("Виконано") or "").strip().upper()
-            agg[key]['done_cols'].append(val == "TRUE")
-    return agg
-
 def schedule_all_block_tasks_for_today():
     today = get_today()
     records = day_sheet.get_all_records()
-    user_tasks = {}
+    by_user_and_block = defaultdict(lambda: defaultdict(list))
     for row in records:
         if str(row.get("Дата")) != today:
             continue
         user_id = row.get("Telegram ID")
-        if user_id:
+        block_num = row.get("Блок")
+        if user_id and block_num:
             try:
-                user_id = int(user_id)
+                user_id_int = int(user_id)
+                by_user_and_block[user_id_int][block_num].append(row)
             except Exception:
                 continue
-            if user_id not in user_tasks:
-                user_tasks[user_id] = []
-            user_tasks[user_id].append(row)
-    for user_id, tasks_rows in user_tasks.items():
-        agg = aggregate_tasks(tasks_rows, today, block_num=None, user_id=user_id)
-        schedule_reminders_for_user(user_id, agg)
-        
-# --- Загальні нагадування (розсилка) ---
-def get_all_staff_user_ids():
-    ids = []
-    try:
-        all_records = staff_sheet.get_all_records()
-        for r in all_records:
-            try:
-                user_id = int(str(r.get("Telegram ID", "")).strip())
-                if user_id:
-                    ids.append(user_id)
-            except:
-                pass
-    except Exception as e:
-        print(f"[ERROR][get_all_staff_user_ids] {e}")
-    return ids
+    for user_id, blocks in by_user_and_block.items():
+        for block_num, tasks_rows in blocks.items():
+            agg = aggregate_tasks(tasks_rows, today, block_num, user_id=user_id)
+            schedule_reminders_for_user(user_id, agg)
 
-def get_today_users():
-    today = get_today()
-    user_ids = set()
-    try:
-        rows = day_sheet.get_all_records()
-        for row in rows:
-            if str(row.get("Дата")) == today and row.get("Telegram ID"):
-                try:
-                    user_ids.add(int(row["Telegram ID"]))
-                except:
-                    pass
-    except Exception as e:
-        print(f"[ERROR][get_today_users] {e}")
-    return list(user_ids)
-
-def get_staff_user_ids_by_username(username):
-    username = str(username).strip().lstrip('@').lower()
-    ids = []
-    try:
-        all_records = staff_sheet.get_all_records()
-        for r in all_records:
-            uname = str(r.get("Username", "")).strip().lstrip('@').lower()
-            if uname == username and r.get("Telegram ID"):
-                try:
-                    ids.append(int(r["Telegram ID"]))
-                except:
-                    pass
-    except Exception as e:
-        print(f"[ERROR][get_staff_user_ids_by_username] {e}")
-    return ids
-
-async def send_general_reminder(text, ids):
-    for user_id in ids:
-        try:
-            await bot.send_message(user_id, f"🔔 <b>Загальне нагадування</b>:\n{text}", parse_mode="HTML")
-        except Exception as e:
-            print(f"[ERROR][send_general_reminder] Cannot send to user {user_id}: {e}")
-
-def schedule_general_reminders(main_loop):
-    try:
-        rows = general_reminders_sheet.get_all_records()
-    except Exception as e:
-        print(f"[ERROR][schedule_general_reminders] Exception при get_all_records: {e}")
-        rows = []
-    days_map = {
-        "понеділок": 0, "вівторок": 1, "середа": 2,
-        "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
-        "субота": 5, "неділя": 6
-    }
-
-    def run_async_job(text, ids_func):
-        try:
-            ids = ids_func()
-            asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids), main_loop)
-        except Exception as e:
-            print(f"[ERROR][run_async_job] Exception: {e}")
-
-    for row in rows:
-        day = str(row.get('День', '')).strip().lower()
-        time_str = str(row.get('Час', '')).strip()
-        text = str(row.get('Текст', '')).strip()
-        send_all = is_true(row.get('Загальна', ''))
-        send_shift = is_true(row.get('Розсилка, хто на зміні', ''))
-        send_individual = is_true(row.get('Індивідуальна розсилка', ''))
-        username = str(row.get('Username', '')).strip()
-        if not day or not time_str or not text or not (send_all or send_shift or send_individual):
-            continue
-        weekday_num = days_map.get(day)
-        if weekday_num is None:
-            continue
-        try:
-            hour, minute = map(int, time_str.split(":"))
-        except Exception as e:
-            continue
-        if send_all:
-            ids_func = get_all_staff_user_ids
-        elif send_shift:
-            ids_func = get_today_users
-        elif send_individual and username:
-            _username = username
-            ids_func = lambda _username=_username: get_staff_user_ids_by_username(_username)
-        else:
-            continue
-        try:
-            scheduler.add_job(
-                run_async_job,
-                'cron',
-                day_of_week=weekday_num,
-                hour=hour,
-                minute=minute,
-                args=[text, ids_func],
-                id=f"general-{day}-{hour}-{minute}-{username or 'all'}",
-                replace_existing=True
-            )
-        except Exception as e:
-            print(f"[ERROR][schedule_general_reminders] Exception при add_job: {e}")
-
-scheduler.add_job(
-    lambda: schedule_general_reminders(asyncio.get_event_loop()),
-    'interval',
-    minutes=10,
-    id="refresh-general-reminders"
-)
-
-# --- Меню ---
+# --- Меню користувача ---
 user_menu = types.ReplyKeyboardMarkup(
     keyboard=[
         [types.KeyboardButton(text="Розпочати день")],
@@ -401,8 +271,8 @@ user_menu = types.ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
-# --- Адмін меню --- #
 
+# --- Меню адміністратора ---
 admin_menu_kb = types.ReplyKeyboardMarkup(
     keyboard=[
         [types.KeyboardButton(text="📋 Створити опитування")],
@@ -411,13 +281,6 @@ admin_menu_kb = types.ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
-
-# --- Адмін звіт по виконанню --- #
-
-from datetime import datetime, timedelta
-
-class ReportFSM(StatesGroup):
-    waiting_date = State()
 
 def get_full_name_by_id(user_id):
     try:
@@ -428,12 +291,12 @@ def get_full_name_by_id(user_id):
         print(f"[ERROR][get_full_name_by_id]: {e}")
     return "?"
 
+# --- Адмін-звіт по виконанню ---
 @dp.message(F.text == "📊 Звіт виконання")
 async def admin_report_choose_date(message: types.Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔️ Доступ лише адміністратору.")
         return
-    # генеруємо останні 10 днів, сьогодні - окремо
     today = datetime.now(UA_TZ).date()
     dates = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(10)]
     kb = types.ReplyKeyboardMarkup(
@@ -447,7 +310,6 @@ async def admin_report_choose_date(message: types.Message, state: FSMContext):
 async def admin_report_generate(message: types.Message, state: FSMContext):
     date = message.text.strip()
     await state.clear()
-    # Якщо це сьогодні, беремо з "Завдання на день"
     if date == datetime.now(UA_TZ).strftime('%Y-%m-%d'):
         sheet = day_sheet
     else:
@@ -463,7 +325,6 @@ async def admin_report_generate(message: types.Message, state: FSMContext):
         await message.answer("Немає даних за цю дату.")
         return
 
-    # групуємо по блоках
     blocks = {}
     for row in rows:
         block = str(row.get("Блок") or "")
@@ -475,7 +336,6 @@ async def admin_report_generate(message: types.Message, state: FSMContext):
 
     result = f"<b>Звіт за {date}:</b>\n\n"
     for block, items in sorted(blocks.items(), key=lambda x: int(x[0])):
-        # визначаємо відповідального (перший, хто є з Telegram ID)
         responsible_id = None
         for r in items:
             if r.get("Telegram ID"):
@@ -487,7 +347,6 @@ async def admin_report_generate(message: types.Message, state: FSMContext):
             name = "—"
         result += f"<b>Блок {block}:</b>\n"
         result += f"Відповідальний: <b>{name}</b>\n"
-        # показуємо лише унікальні завдання (без дублів)
         seen_tasks = set()
         for r in items:
             task = r.get("Завдання") or ""
@@ -509,12 +368,12 @@ async def admin_report_generate(message: types.Message, state: FSMContext):
         result += "\n"
     await message.answer(result, parse_mode="HTML", reply_markup=admin_menu_kb)
 
-def prepend_rows_to_sheet(sheet, rows):
-    # Додає кожен рядок rows на другий рядок таблиці (відразу під заголовок)
-    for i, row in enumerate(rows):
-        sheet.insert_row(row, index=2 + i, value_input_option='USER_ENTERED')
-    
+# --- Кнопки виходу ---
+@dp.message(F.text == "⬅️ Вихід до користувача")
+async def exit_admin(message: types.Message):
+    await message.answer("Повернулись у меню користувача", reply_markup=user_menu)
 
+# --- Створення нагадування ---
 @dp.message(F.text == "Створити нагадування")
 async def start_reminder(message: types.Message, state: FSMContext):
     await state.set_state(ReminderFSM.wait_text)
@@ -554,7 +413,7 @@ async def get_time(message: types.Message, state: FSMContext):
     await message.answer(f"Нагадування створено на {time_str}!\nТекст: {text}")
     await state.clear()
 
-
+# --- Start та меню ---
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):
     await message.answer(
@@ -568,10 +427,6 @@ async def admin_menu(message: types.Message):
         await message.answer("⛔️ Доступ лише для адміністратора.")
         return
     await message.answer("🔧 <b>Адмін-меню</b>", reply_markup=admin_menu_kb, parse_mode="HTML")
-
-@dp.message(F.text == "⬅️ Вихід до користувача")
-async def exit_admin(message: types.Message):
-    await message.answer("Повернулись у меню користувача", reply_markup=user_menu)
 
 @dp.message(F.text == "Список моїх завдань")
 async def my_tasks(message: types.Message):
@@ -607,32 +462,12 @@ async def my_tasks(message: types.Message):
         )
         await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
-async def send_task_to_user(user_id, row, task, desc, status, row_idx):
-    status_text = "✅ Виконано" if status else "❌ Не виконано"
-    kb = None
-    if not status:
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Виконано", callback_data=f"done_task_{row_idx}")]
-        ])
-    msg = f"<b>Завдання:</b> <b>{task}</b>\n"
-    if desc:
-        msg += f"<u>Зона відповідальності:</u>\n{desc}\n"
-    msg += f"<b>Статус:</b> <b>{status_text}</b>"
-    await bot.send_message(user_id, msg, parse_mode="HTML", reply_markup=kb)
-
 @dp.callback_query(F.data.startswith("task_done_"))
 async def mark_task_done_callback(call: types.CallbackQuery):
     row_idx = int(call.data.replace("task_done_", ""))
-    day_sheet.update_cell(row_idx, 10, "TRUE")  # 10 — колонка "Виконано", підлаштуй якщо потрібно
+    day_sheet.update_cell(row_idx, 10, "TRUE")
     await call.message.edit_text(call.message.text.replace("❌", "✅").replace("Не виконано", "Виконано"), parse_mode="HTML")
     await call.answer("Відмічено як виконане ✅")
-
-    text = "<b>Ваші завдання на сьогодні:</b>\n"
-    for row in my_tasks:
-        task = row.get("Завдання") or ""
-        status = "✅" if (row.get("Виконано", "").strip().upper() == "TRUE") else "❌"
-        text += f"— {task} {status}\n"
-    await message.answer(text, parse_mode="HTML", reply_markup=user_menu)
 
 @dp.message(F.text == "Мої нагадування")
 async def my_reminders(message: types.Message):
@@ -647,20 +482,17 @@ async def my_reminders(message: types.Message):
         await message.answer("У вас немає нагадувань на сьогодні.", reply_markup=user_menu)
         return
 
-    # Сортуємо по часу (якщо декілька, то беремо найперший з "Час")
     def parse_time(row):
         times = (row.get("Час") or "").split(",")
         times = [t.strip() for t in times if t.strip()]
         if not times:
-            return "23:59"  # в кінець
+            return "23:59"
         try:
-            # Повертаємо перший час для сортування
             return times[0]
         except:
             return "23:59"
 
     my_reminders_sorted = sorted(my_reminders, key=parse_time)
-
     text = "<b>Ваші нагадування на сьогодні:</b>\n"
     for row in my_reminders_sorted:
         reminder = row.get("Нагадування") or ""
@@ -669,9 +501,7 @@ async def my_reminders(message: types.Message):
         text += f"— {time}: {reminder} {status}\n"
     await message.answer(text, parse_mode="HTML", reply_markup=user_menu)
 
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-
+# --- Інформаційна база ---
 @dp.message(lambda msg: msg.text and msg.text.lower() == "інформаційна база")
 async def show_information_categories(message: types.Message):
     records = information_base_sheet.get_all_records()
@@ -680,7 +510,7 @@ async def show_information_categories(message: types.Message):
         await message.answer("База порожня.")
         return
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text=cat, callback_data=f"info_cat_{cat}") ] for cat in categories]
+        inline_keyboard=[[InlineKeyboardButton(text=cat, callback_data=f"info_cat_{cat}")] for cat in categories]
     )
     await message.answer("Оберіть категорію:", reply_markup=kb)
 
@@ -704,13 +534,20 @@ async def show_information_items(call: types.CallbackQuery):
     await call.message.answer(text.strip(), parse_mode="HTML")
     await call.answer()
 
+# --- Відміна дії ---
+@dp.message(StateFilter('*'), F.text == "Відмінити дію")
+async def universal_back(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("⬅️ Повернулись до головного меню.", reply_markup=user_menu)
+
+# --- Вибір блоків на день ---
 @dp.message(lambda msg: msg.text and msg.text.strip().lower() == 'розпочати день')
 async def choose_blocks_count(message: types.Message):
     kb = types.ReplyKeyboardMarkup(
         keyboard=[
             [types.KeyboardButton(text='6'), types.KeyboardButton(text='7')],
             [types.KeyboardButton(text='8'), types.KeyboardButton(text='9')],
-            [types.KeyboardButton(text='Відмінити дію')],
+            [types.KeyboardButton(text="Відмінити дію")]
         ],
         resize_keyboard=True
     )
@@ -733,16 +570,11 @@ async def select_block(message: types.Message):
     user_id = message.from_user.id
     today = get_today()
     records = day_sheet.get_all_records()
-    # ... (перевірка що блок не зайнятий залишаєш)
-
     await assign_user_to_block(block_num, user_id)
     agg = aggregate_tasks(records, today, block_num, user_id)
-
     if not agg:
         await message.answer("Завдань не знайдено для цього блоку.", reply_markup=user_menu)
         return
-
-    # Відправляємо по одному унікальному завданню
     for (task, desc, block), data in agg.items():
         status_marks = " ".join(["✅" if d else "❌" for d in data['done_cols']])
         text = (
@@ -750,22 +582,17 @@ async def select_block(message: types.Message):
             f"<u>Зона відповідальності:</u>\n{desc}\n"
             f"<b>Статус:</b> <b>{status_marks}</b>"
         )
-        # Якщо хоч одне не виконано — показуємо кнопку
         kb = None
         if not all(data['done_cols']):
-            # тут row_idx — перший з агрегованих рядків (або можеш зробити окремо для кожного нагадування)
             kb = types.InlineKeyboardMarkup(
                 inline_keyboard=[
                     [types.InlineKeyboardButton(text="✅ Виконано", callback_data=f"task_done_{data['row_idxs'][0]}")]
                 ]
             )
         await message.answer(text, reply_markup=kb, parse_mode="HTML")
-
-    # Відправляємо всі унікальні нагадування (по часу)
     reminders = []
     for v in agg.values():
         reminders.extend([(tm, rem) for tm, rem, _, _ in v['reminders']])
-    # Сортуємо по часу
     reminders = sorted(set(reminders), key=lambda x: x[0])
     if reminders:
         reminders_text = "<b>Нагадування для вашого блоку:</b>\n"
@@ -773,290 +600,15 @@ async def select_block(message: types.Message):
             reminders_text += f"— {tm}: {rem}\n"
         await message.answer(reminders_text, parse_mode="HTML", reply_markup=user_menu)
 
-@dp.callback_query(F.data.startswith('task_done_'))
-async def mark_task_done_callback(call: types.CallbackQuery):
-    row_idx = int(call.data.replace("task_done_", ""))
-    day_sheet.update_cell(row_idx, 10, "TRUE")
-    await call.message.edit_text(call.message.text.replace("❌", "✅").replace("Не виконано", "Виконано"), parse_mode="HTML")
-    await call.answer("Відмічено як виконане ✅")
-
-@dp.message(StateFilter('*'), F.text == "Відмінити дію")
-async def universal_back(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer("⬅️ Повернулись до головного меню.", reply_markup=user_menu)
-
-async def send_task_with_status(user_id, task, desc, done, row):
-    status = "✅" if done else "❌"
-    text = (
-        f"<b>Завдання:</b> <b>{task}</b>\n"
-        f"<u>Зона відповідальності:</u>\n{desc.strip()}\n"
-        f"<b>Статус: {status}</b>"
-    )
-    kb = types.InlineKeyboardMarkup(
-        inline_keyboard=[
-            [types.InlineKeyboardButton(text="✅ Виконано", callback_data=f"task_done_{row}")]
-        ]
-    )
-    await bot.send_message(user_id, text, reply_markup=kb, parse_mode="HTML")
-
-# --- Опитування --- #
-@dp.message(lambda m: m.text and m.text.strip().lower() == "створити опитування")
-async def poll_start(message: types.Message, state: FSMContext):
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("⛔️ Доступно лише адміністратору.")
-        return
-    await message.answer("Введіть текст питання для опитування:")
-    await state.set_state(PollState.waiting_question)
-
-@dp.message(PollState.waiting_question)
-async def poll_got_question(message: types.Message, state: FSMContext):
-    await state.update_data(question=message.text.strip())
-    await message.answer("Введіть варіанти відповіді через кому (наприклад: Так, Ні, Не знаю):")
-    await state.set_state(PollState.waiting_options)
-
-@dp.message(PollState.waiting_options)
-async def poll_got_options(message: types.Message, state: FSMContext):
-    options = [opt.strip() for opt in message.text.split(",") if opt.strip()]
-    if len(options) < 2:
-        await message.answer("Має бути мінімум 2 варіанти!")
-        return
-    await state.update_data(options=options)
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[
-            [types.KeyboardButton(text="Одна відповідь (radio)")],
-            [types.KeyboardButton(text="Кілька відповідей (checkbox)")]
-        ], resize_keyboard=True, one_time_keyboard=True)
-    await message.answer("Який тип опитування?", reply_markup=kb)
-    await state.set_state(PollState.waiting_type)
-
-@dp.message(PollState.waiting_type)
-async def poll_got_type(message: types.Message, state: FSMContext):
-    if "одна" in message.text.lower():
-        poll_type = "radio"
-    elif "кілька" in message.text.lower():
-        poll_type = "checkbox"
-    else:
-        await message.answer("Оберіть тип із кнопок.")
-        return
-    await state.update_data(poll_type=poll_type)
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[
-            [types.KeyboardButton(text="Всі зі штату")],
-            [types.KeyboardButton(text="Ті, хто на зміні")],
-            [types.KeyboardButton(text="Конкретний користувач")]
-        ], resize_keyboard=True, one_time_keyboard=True)
-    await message.answer("Кому надіслати опитування?", reply_markup=kb)
-    await state.set_state(PollState.waiting_target)
-
-@dp.message(PollState.waiting_target)
-async def poll_got_target(message: types.Message, state: FSMContext):
-    if "штат" in message.text.lower():
-        await state.update_data(target="all")
-        await state.set_state(PollState.waiting_datetime)
-        await message.answer("Введіть дату і час у форматі YYYY-MM-DD HH:MM:")
-    elif "зміні" in message.text.lower():
-        await state.update_data(target="shift")
-        await state.set_state(PollState.waiting_datetime)
-        await message.answer("Введіть дату і час у форматі YYYY-MM-DD HH:MM:")
-    elif "користувач" in message.text.lower():
-        await state.update_data(target="user")
-        await state.set_state(PollState.waiting_username)
-        await message.answer("Введіть username користувача (без @):")
-    else:
-        await message.answer("Оберіть варіант із кнопок.")
-
-@dp.message(PollState.waiting_username)
-async def poll_got_username(message: types.Message, state: FSMContext):
-    username = message.text.strip().lstrip('@')
-    await state.update_data(username=username)
-    await state.set_state(PollState.waiting_datetime)
-    await message.answer("Введіть дату і час у форматі YYYY-MM-DD HH:MM:")
-
-@dp.message(PollState.waiting_datetime)
-async def poll_got_datetime(message: types.Message, state: FSMContext):
-    try:
-        dt = datetime.strptime(message.text.strip(), "%Y-%m-%d %H:%M")
-        await state.update_data(datetime=dt.strftime("%Y-%m-%d %H:%M"))
-    except Exception:
-        await message.answer("Некоректний формат. Приклад: 2025-07-14 16:00")
-        return
-    data = await state.get_data()
-    preview = f"<b>ОПИТУВАННЯ</b>\nПитання: {data['question']}\nВаріанти: {', '.join(data['options'])}\nТип: {data['poll_type']}\nЧас: {data['datetime']}"
-    if data["target"] == "user":
-        preview += f"\nUser: @{data['username']}"
-    await message.answer(preview, parse_mode="HTML")
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[[types.KeyboardButton(text="✅ Підтвердити створення")],
-                  [types.KeyboardButton(text="❌ Відмінити")]],
-        resize_keyboard=True, one_time_keyboard=True
-    )
-    await message.answer("Підтвердити створення опитування?", reply_markup=kb)
-    await state.set_state(PollState.confirm)
-
-@dp.message(PollState.confirm)
-async def poll_confirm(message: types.Message, state: FSMContext):
-    if "підтвердити" in message.text.lower():
-        data = await state.get_data()
-        # Записати в Google Sheet
-        row = [
-            data.get("question"),
-            ";".join(data.get("options", [])),
-            data.get("poll_type"),
-            data.get("target"),
-            data.get("username", ""),
-            data.get("datetime"),
-            ""  # Тут буде записуватись вибраний варіант (результат)
-        ]
-        poll_sheet.append_row(row, value_input_option='USER_ENTERED')
-        await message.answer("✅ Опитування створене та заплановане!", reply_markup=types.ReplyKeyboardRemove())
-        await state.clear()
-    else:
-        await message.answer("❌ Відмінено.", reply_markup=types.ReplyKeyboardRemove())
-        await state.clear()
-
-# --- Логіка надсилання опитування ---
-days_map = {
-    "понеділок": 0, "вівторок": 1, "середа": 2,
-    "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
-    "субота": 5, "неділя": 6
-}
-
-async def send_poll_to_users(title, options, poll_type, user_ids, poll_row_idx):
-    if poll_type == "radio":
-        kb = types.InlineKeyboardMarkup()
-        for opt in options:
-            kb.add(types.InlineKeyboardButton(text=opt, callback_data=f"poll_{poll_row_idx}_{opt}"))
-        for uid in user_ids:
-            await bot.send_message(uid, f"🗳 <b>{title}</b>", reply_markup=kb, parse_mode="HTML")
-    else:  # checkbox
-        kb = types.InlineKeyboardMarkup()
-        for opt in options:
-            kb.add(types.InlineKeyboardButton(text=opt, callback_data=f"pollcb_{poll_row_idx}_{opt}"))
-        kb.add(types.InlineKeyboardButton(text="✅ Завершити", callback_data=f"pollcb_{poll_row_idx}_done"))
-        for uid in user_ids:
-            await bot.send_message(uid, f"🗳 <b>{title}</b>\n(Можна обрати кілька варіантів, після вибору натисніть 'Завершити')", reply_markup=kb, parse_mode="HTML")
-
-@dp.callback_query(lambda c: c.data.startswith("poll_"))
-async def on_poll_vote(call: types.CallbackQuery):
-    _, row_idx, option = call.data.split("_", 2)
-    user = call.from_user.username or call.from_user.id
-    poll_sheet.append_row([
-        poll_sheet.cell(int(row_idx)+1, 1).value,  # назва
-        poll_sheet.cell(int(row_idx)+1, 2).value,  # варіанти
-        option,                                    # вибраний варіант
-        datetime.now(UA_TZ).strftime("%Y-%m-%d %H:%M"),
-        user,                                      # username
-        poll_sheet.cell(int(row_idx)+1, 6).value,  # день
-        poll_sheet.cell(int(row_idx)+1, 7).value,  # тип
-        poll_sheet.cell(int(row_idx)+1, 8).value,  # recipients
-        poll_sheet.cell(int(row_idx)+1, 9).value   # username if individual
-    ])
-    await call.answer("Ваш вибір прийнято!", show_alert=True)
-    await call.message.edit_reply_markup(reply_markup=None)
-
-# Для чекбоксів — тимчасове зберігання
-user_checkbox_selections = {}
-
-@dp.callback_query(lambda c: c.data.startswith("pollcb_"))
-async def on_pollcb_vote(call: types.CallbackQuery):
-    parts = call.data.split("_")
-    row_idx = parts[1]
-    option = "_".join(parts[2:])
-    user = call.from_user.username or call.from_user.id
-    key = f"{row_idx}:{user}"
-    if option == "done":
-        selected = user_checkbox_selections.get(key, [])
-        if not selected:
-            await call.answer("Оберіть хоча б одну відповідь.", show_alert=True)
-            return
-        for opt in selected:
-            poll_sheet.append_row([
-                poll_sheet.cell(int(row_idx)+1, 1).value,  # назва
-                poll_sheet.cell(int(row_idx)+1, 2).value,  # варіанти
-                opt,                                       # вибраний варіант
-                datetime.now(UA_TZ).strftime("%Y-%m-%d %H:%M"),
-                user,                                      # username
-                poll_sheet.cell(int(row_idx)+1, 6).value,  # день
-                poll_sheet.cell(int(row_idx)+1, 7).value,  # тип
-                poll_sheet.cell(int(row_idx)+1, 8).value,  # recipients
-                poll_sheet.cell(int(row_idx)+1, 9).value   # username if individual
-            ])
-        await call.answer("Ваш вибір прийнято!", show_alert=True)
-        await call.message.edit_reply_markup(reply_markup=None)
-        user_checkbox_selections.pop(key, None)
-        return
-    # Додаємо до вибраного
-    if key not in user_checkbox_selections:
-        user_checkbox_selections[key] = []
-    if option not in user_checkbox_selections[key]:
-        user_checkbox_selections[key].append(option)
-    await call.answer(f"Вибрано: {', '.join(user_checkbox_selections[key])}")
-
-# --- Планувальник для опитувань ---
-def schedule_polls():
-    rows = poll_sheet.get_all_records()
-    for idx, row in enumerate(rows):
-        title = row.get("назва", "")
-        options = row.get("варіанти вибору", "").split(";")
-        poll_type = row.get("тип", "radio")
-        day = row.get("день", "")
-        time_str = row.get("час", "")
-        recipients = row.get("recipients", "")
-        username = row.get("username", "")
-        if not title or not options or not day or not time_str:
-            continue
-        weekday_num = days_map.get(day)
-        if weekday_num is None:
-            continue
-        try:
-            hour, minute = map(int, time_str.split(":"))
-        except:
-            continue
-        if "штату" in recipients:
-            user_ids = get_all_staff_user_ids
-        elif "зміні" in recipients:
-            user_ids = get_today_users
-        elif "індивідуально" in recipients and username:
-            user_ids = lambda username=username: get_staff_user_ids_by_username(username)
-        else:
-            continue
-
-        def run_poll_async(idx=idx, title=title, options=options, poll_type=poll_type, user_ids=user_ids):
-            ids = user_ids() if callable(user_ids) else user_ids
-            asyncio.run_coroutine_threadsafe(
-                send_poll_to_users(title, options, poll_type, ids, idx),
-                asyncio.get_event_loop()
-            )
-
-        scheduler.add_job(
-            run_poll_async,
-            'cron',
-            day_of_week=weekday_num,
-            hour=hour,
-            minute=minute,
-            id=f"poll-{idx}",
-            replace_existing=True
-        )
-
-
-# --- Запуск ---
+# --- ПЛАНУВАЛЬНИК і ЗАПУСК ---
 def refresh_block_tasks():
     print("[REFRESH] Оновлення завдань з Google Sheet")
     schedule_all_block_tasks_for_today()
 
 async def main():
     loop = asyncio.get_running_loop()
-    schedule_general_reminders(loop)
     scheduler.start()
     schedule_all_block_tasks_for_today()
-    schedule_polls()
-    scheduler.add_job(
-        refresh_block_tasks,
-        'interval',
-        hours=1,
-        id="refresh-block-tasks",
-        replace_existing=True
-    )
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

@@ -130,7 +130,7 @@ async def assign_user_to_block(block_num, user_id):
         if str(row["Дата"]) == today and str(row["Блок"]) == str(block_num) and not row["Telegram ID"]:
             await asyncio.sleep(0.5)
 update_cell(i+2, 8, str(user_id))  # Telegram ID
-            day_sheet.await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)
 update_cell(i+2, 9, name)          # Імʼя
     user_sessions[user_id] = block_num
 
@@ -189,7 +189,7 @@ async def done_callback(call: types.CallbackQuery):
     idx = int(parts[2])  # індекс нагадування
     # Визначаємо номер стовпця: 10 - 'Виконано', 11 - 'Виконано (2)', 12 - 'Виконано (3)' ...
     col = 10 + (idx - 1)
-    day_sheet.await asyncio.sleep(0.5)
+    await asyncio.sleep(0.5)
 update_cell(row, col, "TRUE")
     await call.message.edit_text(
         call.message.text.replace("нагадування надійшло", "Успішне"),
@@ -630,7 +630,7 @@ async def send_task_to_user(user_id, row, task, desc, status, row_idx):
 @dp.callback_query(F.data.startswith("task_done_"))
 async def mark_task_done_callback(call: types.CallbackQuery):
     row_idx = int(call.data.replace("task_done_", ""))
-    day_sheet.await asyncio.sleep(0.5)
+    await asyncio.sleep(0.5)
 update_cell(row_idx, 10, "TRUE")  # 10 — колонка "Виконано", підлаштуй якщо потрібно
     await call.message.edit_text(call.message.text.replace("❌", "✅").replace("Не виконано", "Виконано"), parse_mode="HTML")
     await call.answer("Відмічено як виконане ✅")
@@ -783,7 +783,7 @@ async def select_block(message: types.Message):
 @dp.callback_query(F.data.startswith('task_done_'))
 async def mark_task_done_callback(call: types.CallbackQuery):
     row_idx = int(call.data.replace("task_done_", ""))
-    day_sheet.await asyncio.sleep(0.5)
+    await asyncio.sleep(0.5)
 update_cell(row_idx, 10, "TRUE")
     await call.message.edit_text(call.message.text.replace("❌", "✅").replace("Не виконано", "Виконано"), parse_mode="HTML")
     await call.answer("Відмічено як виконане ✅")

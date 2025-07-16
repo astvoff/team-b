@@ -388,12 +388,50 @@ def schedule_general_reminders(main_loop):
         except Exception as e:
             print(f"[ERROR][schedule_general_reminders] Exception при add_job: {e}")
 
+def refresh_general_reminders():
+    loop = asyncio.get_event_loop()
+    schedule_general_reminders(loop)
 scheduler.add_job(
-    lambda: schedule_general_reminders(asyncio.get_event_loop()),
+    refresh_general_reminders,
     'interval',
     minutes=10,
     id="refresh-general-reminders"
 )
+
+def aggregate_tasks(records, today, block_num, user_id):
+    """
+    Агрегує завдання користувача для обраного блоку.
+    Повертає: {(task, desc, block): {'done_cols': [...], 'row_idxs': [...], 'reminders': [(time, reminder, ..., ...)]}}
+    """
+    agg = {}
+    for idx, row in enumerate(records):
+        if (
+            str(row.get("Дата")) == today and
+            str(row.get("Блок")) == str(block_num) and
+            str(row.get("Telegram ID")) == str(user_id)
+        ):
+            task = row.get("Завдання") or ""
+            desc = row.get("Опис", "")
+            block = row.get("Блок")
+            key = (task, desc, block)
+            done_cols = []
+            reminders = []
+            times = [tm.strip() for tm in (row.get("Час") or "").split(",") if tm.strip()]
+            for i, tm in enumerate(times):
+                col = "Виконано" if i == 0 else f"Виконано ({i+1})"
+                val = (row.get(col) or "").strip().upper()
+                done_cols.append(val == "TRUE")
+                reminders.append((tm, row.get("Нагадування", ""), idx + 2, col))
+            if not times:
+                # якщо немає часу — лише один done
+                val = (row.get("Виконано") or "").strip().upper()
+                done_cols.append(val == "TRUE")
+            agg[key] = {
+                'done_cols': done_cols,
+                'row_idxs': [idx + 2],  # номер рядка для update_cell
+                'reminders': reminders
+            }
+    return agg
 
 # --- Меню ---
 user_menu = types.ReplyKeyboardMarkup(

@@ -354,6 +354,7 @@ def schedule_general_reminders(main_loop):
     except Exception as e:
         print(f"[ERROR][schedule_general_reminders] Exception при get_all_records: {e}")
         rows = []
+
     days_map = {
         "понеділок": 0, "вівторок": 1, "середа": 2,
         "четвер": 3, "пʼятниця": 4, "п’ятниця": 4, "пятниця": 4,
@@ -367,11 +368,31 @@ def schedule_general_reminders(main_loop):
         except Exception as e:
             print(f"[ERROR][run_async_job] Exception: {e}")
 
+    def run_task_async_job(task_name, text):
+        try:
+            today = get_today()
+            records = day_sheet.get_all_records()
+            for rec in records:
+                # Порівнюємо по назві завдання
+                if (
+                    str(rec.get("Дата", "")) == today and
+                    (rec.get("Завдання", "") or "").strip().lower() == task_name.strip().lower() and
+                    rec.get("Telegram ID")
+                ):
+                    user_id = int(rec.get("Telegram ID"))
+                    asyncio.run_coroutine_threadsafe(
+                        send_general_reminder(text, [user_id]),
+                        main_loop
+                    )
+                    break
+        except Exception as e:
+            print(f"[ERROR][run_task_async_job] Exception: {e}")
+
     for row in rows:
         day = str(row.get('День', '')).strip().lower()
         time_str = str(row.get('Час', '')).strip()
         text = str(row.get('Текст', '')).strip()
-        task_name = str(row.get('Завдання', '')).strip()   # <- ТУТ!
+        task_name = str(row.get('Завдання', '')).strip()
         send_all = is_true(row.get('Загальна', ''))
         send_shift = is_true(row.get('Розсилка, хто на зміні', ''))
         send_individual = is_true(row.get('Індивідуальна розсилка', ''))
@@ -385,31 +406,11 @@ def schedule_general_reminders(main_loop):
             continue
         try:
             hour, minute = map(int, time_str.split(":"))
-        except Exception as e:
+        except Exception:
             continue
 
-        # --- Якщо вказано Завдання (колонка J) — шукаємо відповідального і надсилаємо ---
+        # --- Якщо вказано ЗАВДАННЯ — надсилаємо тому, хто сьогодні його виконує ---
         if task_name:
-            def run_task_async_job(task_name=task_name, text=text):
-                try:
-                    today = get_today()
-                    # ВАЖЛИВО! Тут шукаємо "Завдання" у листі day_sheet
-                    records = day_sheet.get_all_records()
-                    for rec in records:
-                        if (
-                            str(rec.get("Дата", "")) == today and
-                            (rec.get("Завдання", "") or "").strip().lower() == task_name.strip().lower() and
-                            rec.get("Telegram ID")
-                        ):
-                            user_id = int(rec.get("Telegram ID"))
-                            asyncio.run_coroutine_threadsafe(
-                                send_general_reminder(text, [user_id]),
-                                main_loop
-                            )
-                            break
-                except Exception as e:
-                    print(f"[ERROR][run_task_async_job] Exception: {e}")
-
             try:
                 scheduler.add_job(
                     run_task_async_job,
@@ -417,6 +418,7 @@ def schedule_general_reminders(main_loop):
                     day_of_week=weekday_num,
                     hour=hour,
                     minute=minute,
+                    args=[task_name, text],
                     id=f"task-general-{task_name}-{day}-{hour}-{minute}",
                     replace_existing=True
                 )
@@ -424,7 +426,7 @@ def schedule_general_reminders(main_loop):
                 print(f"[ERROR][schedule_general_reminders][task] Exception при add_job: {e}")
             continue
 
-        # --- Стандартна розсилка ---
+        # --- Класична розсилка ---
         if send_all:
             ids_func = get_all_staff_user_ids
         elif send_shift:

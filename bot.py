@@ -276,6 +276,8 @@ scheduler.add_job(
 )
 
 # --- Загальні нагадування (розсилка) ---
+# --- Загальні нагадування (розсилка) ---
+
 def get_all_staff_user_ids():
     ids = []
     try:
@@ -321,6 +323,15 @@ def get_staff_user_ids_by_username(username):
     except Exception as e:
         print(f"[ERROR][get_staff_user_ids_by_username] {e}")
     return ids
+
+def get_today_block_user_ids(block_number):
+    today = get_today()
+    records = day_sheet.get_all_records()
+    return [
+        int(row["Telegram ID"])
+        for row in records
+        if str(row.get("Дата")) == today and str(row.get("Блок")) == str(block_number) and row.get("Telegram ID")
+    ]
 
 async def send_general_reminder(text, ids):
     for user_id in ids:
@@ -419,26 +430,15 @@ def schedule_general_reminders(main_loop):
         except Exception as e:
             print(f"[ERROR][schedule_general_reminders] Exception при add_job: {e}")
 
-# --- Меню ---
-user_menu = types.ReplyKeyboardMarkup(
-    keyboard=[
-        [types.KeyboardButton(text="Розпочати день")],
-        [types.KeyboardButton(text="Список моїх завдань"), types.KeyboardButton(text="Мої нагадування")],
-        [types.KeyboardButton(text="Створити нагадування"), types.KeyboardButton(text="Інформаційна база")],
-        [types.KeyboardButton(text="Завершити день")],
-        [types.KeyboardButton(text="Відмінити дію")]
-    ],
-    resize_keyboard=True
-)
-# --- Адмін меню --- #
+def refresh_general_reminders():
+    loop = asyncio.get_event_loop()
+    schedule_general_reminders(loop)
 
-admin_menu_kb = types.ReplyKeyboardMarkup(
-    keyboard=[
-        [types.KeyboardButton(text="📋 Створити опитування")],
-        [types.KeyboardButton(text="📊 Звіт виконання")],
-        [types.KeyboardButton(text="⬅️ Вихід до користувача")]
-    ],
-    resize_keyboard=True
+scheduler.add_job(
+    refresh_general_reminders,
+    'interval',
+    minutes=10,
+    id="refresh-general-reminders"
 )
 
 # --- Адмін звіт по виконанню --- #
@@ -763,6 +763,8 @@ async def select_block(message: types.Message):
 
     # 1. Призначити користувача на блок (записати в Google Sheets)
     await assign_user_to_block(block_num, user_id)
+await asyncio.sleep(0.7)  # 0.5-1 секунду достатньо
+records = day_sheet.get_all_records()
     # 2. Ще раз зчитати дані з таблиці (новий запис уже є!)
     records = day_sheet.get_all_records()
 

@@ -371,7 +371,7 @@ def schedule_general_reminders(main_loop):
         day = str(row.get('День', '')).strip().lower()
         time_str = str(row.get('Час', '')).strip()
         text = str(row.get('Текст', '')).strip()
-        task_name = str(row.get('Завдання', '')).strip()
+        task_name = str(row.get('Завдання', '')).strip()   # <- ТУТ!
         send_all = is_true(row.get('Загальна', ''))
         send_shift = is_true(row.get('Розсилка, хто на зміні', ''))
         send_individual = is_true(row.get('Індивідуальна розсилка', ''))
@@ -388,16 +388,19 @@ def schedule_general_reminders(main_loop):
         except Exception as e:
             continue
 
-        # --- Якщо вказано Завдання — розсилаємо тільки відповідальному за це завдання сьогодні ---
+        # --- Якщо вказано Завдання (колонка J) — шукаємо відповідального і надсилаємо ---
         if task_name:
             def run_task_async_job(task_name=task_name, text=text):
                 try:
                     today = get_today()
+                    # ВАЖЛИВО! Тут шукаємо "Завдання" у листі day_sheet
                     records = day_sheet.get_all_records()
                     for rec in records:
-                        if (str(rec.get("Дата")) == today and
-                            (rec.get("Завдання") or "").strip().lower() == task_name.strip().lower() and
-                            rec.get("Telegram ID")):
+                        if (
+                            str(rec.get("Дата", "")) == today and
+                            (rec.get("Завдання", "") or "").strip().lower() == task_name.strip().lower() and
+                            rec.get("Telegram ID")
+                        ):
                             user_id = int(rec.get("Telegram ID"))
                             asyncio.run_coroutine_threadsafe(
                                 send_general_reminder(text, [user_id]),
@@ -420,31 +423,6 @@ def schedule_general_reminders(main_loop):
             except Exception as e:
                 print(f"[ERROR][schedule_general_reminders][task] Exception при add_job: {e}")
             continue
-
-        # --- Стандартні типи розсилки ---
-        if send_all:
-            ids_func = get_all_staff_user_ids
-        elif send_shift:
-            ids_func = get_today_users
-        elif send_individual and username:
-            _username = username
-            ids_func = lambda _username=_username: get_staff_user_ids_by_username(_username)
-        else:
-            continue
-
-        try:
-            scheduler.add_job(
-                run_async_job,
-                'cron',
-                day_of_week=weekday_num,
-                hour=hour,
-                minute=minute,
-                args=[text, ids_func],
-                id=f"general-{day}-{hour}-{minute}-{username or 'all'}",
-                replace_existing=True
-            )
-        except Exception as e:
-            print(f"[ERROR][schedule_general_reminders] Exception при add_job: {e}")
 
         # --- Стандартна розсилка ---
         if send_all:

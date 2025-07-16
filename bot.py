@@ -180,17 +180,6 @@ async def notify_admin_if_needed(user_id, row, task, reminder, block):
                 parse_mode="HTML"
             )
 
-user_menu = types.ReplyKeyboardMarkup(
-    keyboard=[
-        [types.KeyboardButton(text="Розпочати день")],
-        [types.KeyboardButton(text="Список моїх завдань"), types.KeyboardButton(text="Мої нагадування")],
-        [types.KeyboardButton(text="Створити нагадування"), types.KeyboardButton(text="Інформаційна база")],
-        [types.KeyboardButton(text="Завершити день")],
-        [types.KeyboardButton(text="Відмінити дію")]
-    ],
-    resize_keyboard=True
-)
-
 @dp.callback_query(F.data.startswith('done_'))
 async def done_callback(call: types.CallbackQuery):
     parts = call.data.split('_')
@@ -287,7 +276,6 @@ scheduler.add_job(
 )
 
 # --- Загальні нагадування (розсилка) ---
-
 def get_all_staff_user_ids():
     ids = []
     try:
@@ -333,15 +321,6 @@ def get_staff_user_ids_by_username(username):
     except Exception as e:
         print(f"[ERROR][get_staff_user_ids_by_username] {e}")
     return ids
-
-def get_today_block_user_ids(block_number):
-    today = get_today()
-    records = day_sheet.get_all_records()
-    return [
-        int(row["Telegram ID"])
-        for row in records
-        if str(row.get("Дата")) == today and str(row.get("Блок")) == str(block_number) and row.get("Telegram ID")
-    ]
 
 async def send_general_reminder(text, ids):
     for user_id in ids:
@@ -440,15 +419,26 @@ def schedule_general_reminders(main_loop):
         except Exception as e:
             print(f"[ERROR][schedule_general_reminders] Exception при add_job: {e}")
 
-def refresh_general_reminders():
-    loop = asyncio.get_event_loop()
-    schedule_general_reminders(loop)
+# --- Меню ---
+user_menu = types.ReplyKeyboardMarkup(
+    keyboard=[
+        [types.KeyboardButton(text="Розпочати день")],
+        [types.KeyboardButton(text="Список моїх завдань"), types.KeyboardButton(text="Мої нагадування")],
+        [types.KeyboardButton(text="Створити нагадування"), types.KeyboardButton(text="Інформаційна база")],
+        [types.KeyboardButton(text="Завершити день")],
+        [types.KeyboardButton(text="Відмінити дію")]
+    ],
+    resize_keyboard=True
+)
+# --- Адмін меню --- #
 
-scheduler.add_job(
-    refresh_general_reminders,
-    'interval',
-    minutes=10,
-    id="refresh-general-reminders"
+admin_menu_kb = types.ReplyKeyboardMarkup(
+    keyboard=[
+        [types.KeyboardButton(text="📋 Створити опитування")],
+        [types.KeyboardButton(text="📊 Звіт виконання")],
+        [types.KeyboardButton(text="⬅️ Вихід до користувача")]
+    ],
+    resize_keyboard=True
 )
 
 # --- Адмін звіт по виконанню --- #
@@ -754,6 +744,17 @@ async def choose_blocks_count(message: types.Message):
     )
     await message.answer("Оберіть кількість блоків на сьогодні:", reply_markup=kb)
 
+@dp.message(F.text.in_(['6', '7', '8', '9']))
+async def on_blocks_count_chosen(message: types.Message):
+    blocks_count = message.text.strip()
+    copy_template_blocks_to_today(blocks_count)
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=[[types.KeyboardButton(text=f"{b} блок")] for b in get_blocks_for_today()] +
+                 [[types.KeyboardButton(text="Відмінити дію")]],
+        resize_keyboard=True
+    )
+    await message.answer(f"Оберіть свій блок:", reply_markup=kb)
+
 @dp.message(F.text.regexp(r'^\d+ блок$'))
 async def select_block(message: types.Message):
     block_num = message.text.split()[0]
@@ -762,8 +763,6 @@ async def select_block(message: types.Message):
 
     # 1. Призначити користувача на блок (записати в Google Sheets)
     await assign_user_to_block(block_num, user_id)
-    await asyncio.sleep(0.7)  # 0.5-1 секунду достатньо для оновлення в Google Sheets
-
     # 2. Ще раз зчитати дані з таблиці (новий запис уже є!)
     records = day_sheet.get_all_records()
 
@@ -773,7 +772,7 @@ async def select_block(message: types.Message):
         await message.answer("Завдань не знайдено для цього блоку.", reply_markup=user_menu)
         return
 
-    # 4. Відправити всі завдання для блоку
+    # 4. Відправити всі завдання
     for (task, desc, block), data in agg.items():
         status_marks = " ".join(["✅" if d else "❌" for d in data['done_cols']])
         text = (
@@ -801,7 +800,7 @@ async def select_block(message: types.Message):
             reminders_text += f"— {tm}: {rem}\n"
         await message.answer(reminders_text, parse_mode="HTML", reply_markup=user_menu)
 
-    # 6. Запланувати персональні нагадування для користувача по задачах блоку
+    # 6. ОБОВʼЯЗКОВО: запланувати реальні job для нагадувань
     tasks = get_tasks_for_block(block_num, user_id)
     schedule_reminders_for_user(user_id, tasks)
 

@@ -761,12 +761,12 @@ async def select_block(message: types.Message):
     user_id = message.from_user.id
     today = get_today()
 
-    # 1. Призначити користувача на блок (записати в Google Sheets)
-    await assign_user_to_block(block_num, user_id)
+   # 1. Призначити користувача на блок (записати в Google Sheets)
+await assign_user_to_block(block_num, user_id)
 await asyncio.sleep(0.7)  # 0.5-1 секунду достатньо
+
+# 2. Ще раз зчитати дані з таблиці (новий запис уже є!)
 records = day_sheet.get_all_records()
-    # 2. Ще раз зчитати дані з таблиці (новий запис уже є!)
-    records = day_sheet.get_all_records()
 
     # 3. Агрегуємо завдання для юзера по цьому блоку
     agg = aggregate_tasks(records, today, block_num, user_id)

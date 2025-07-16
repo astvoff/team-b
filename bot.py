@@ -329,6 +329,25 @@ async def send_general_reminder(text, ids):
         except Exception as e:
             print(f"[ERROR][send_general_reminder] Cannot send to user {user_id}: {e}")
 
+def get_today_block_user_ids(block_num):
+    today = get_today()
+    user_ids = set()
+    try:
+        rows = day_sheet.get_all_records()
+        for row in rows:
+            if (
+                str(row.get("Дата")) == today and
+                str(row.get("Блок")) == str(block_num) and
+                row.get("Telegram ID")
+            ):
+                try:
+                    user_ids.add(int(row["Telegram ID"]))
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"[ERROR][get_today_block_user_ids] {e}")
+    return list(user_ids)
+
 def schedule_general_reminders(main_loop):
     try:
         rows = general_reminders_sheet.get_all_records()
@@ -456,6 +475,11 @@ def get_full_name_by_id(user_id):
     except Exception as e:
         print(f"[ERROR][get_full_name_by_id]: {e}")
     return "?"
+
+@dp.message(StateFilter('*'), F.text == "Відмінити дію")
+async def universal_back(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("⬅️ Повернулись до головного меню.", reply_markup=user_menu)
 
 @dp.message(F.text == "📊 Звіт виконання")
 async def admin_report_choose_date(message: types.Message, state: FSMContext):
@@ -845,11 +869,6 @@ async def mark_task_done_callback(call: types.CallbackQuery):
     day_sheet.update_cell(row_idx, 10, "TRUE")
     await call.message.edit_text(call.message.text.replace("❌", "✅").replace("Не виконано", "Виконано"), parse_mode="HTML")
     await call.answer("Відмічено як виконане ✅")
-
-@dp.message(StateFilter('*'), F.text == "Відмінити дію")
-async def universal_back(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer("⬅️ Повернулись до головного меню.", reply_markup=user_menu)
 
 async def send_task_with_status(user_id, task, desc, done, row):
     status = "✅" if done else "❌"

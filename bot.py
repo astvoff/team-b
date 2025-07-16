@@ -167,7 +167,7 @@ async def notify_admin_if_needed(user_id, row, task, reminder, block):
     value = day_sheet.cell(row, 10).value
     print(f"[DEBUG][notify_admin_if_needed] value={value}")  # ЛОГ ДЛЯ ДЕБАГУ
     if value != "TRUE":
-        name = get_staff_name_by_id(user_id)
+        name = get_full_name_by_id(user_id)
         print(f"[ADMIN ALERT] Відправляю адміну {ADMIN_IDS} про задачу {task}")
         for admin_id in ADMIN_IDS:
             await bot.send_message(
@@ -348,16 +348,27 @@ def schedule_general_reminders(main_loop):
         except Exception as e:
             print(f"[ERROR][run_async_job] Exception: {e}")
 
+    def run_block_async_job(block_num, text):
+        try:
+            ids = get_today_block_user_ids(block_num)
+            asyncio.run_coroutine_threadsafe(send_general_reminder(text, ids), main_loop)
+        except Exception as e:
+            print(f"[ERROR][run_block_async_job] Exception: {e}")
+
     for row in rows:
         day = str(row.get('День', '')).strip().lower()
         time_str = str(row.get('Час', '')).strip()
         text = str(row.get('Текст', '')).strip()
+        block_num = str(row.get('Блок', '')).strip()  # <--- нова колонка "Блок"
         send_all = is_true(row.get('Загальна', ''))
         send_shift = is_true(row.get('Розсилка, хто на зміні', ''))
         send_individual = is_true(row.get('Індивідуальна розсилка', ''))
         username = str(row.get('Username', '')).strip()
-        if not day or not time_str or not text or not (send_all or send_shift or send_individual):
+
+        # Якщо не вказано жодного типу розсилки і блок також не вказано — пропускаємо
+        if not day or not time_str or not text or not (send_all or send_shift or send_individual or block_num):
             continue
+
         weekday_num = days_map.get(day)
         if weekday_num is None:
             continue
@@ -365,6 +376,25 @@ def schedule_general_reminders(main_loop):
             hour, minute = map(int, time_str.split(":"))
         except Exception as e:
             continue
+
+        # --- Якщо вказано БЛОК — розсилаємо тільки тому, хто на цьому блоці сьогодні ---
+        if block_num:
+            try:
+                scheduler.add_job(
+                    run_block_async_job,
+                    'cron',
+                    day_of_week=weekday_num,
+                    hour=hour,
+                    minute=minute,
+                    args=[block_num, text],
+                    id=f"block-general-{block_num}-{day}-{hour}-{minute}",
+                    replace_existing=True
+                )
+            except Exception as e:
+                print(f"[ERROR][schedule_general_reminders][block] Exception при add_job: {e}")
+            continue
+
+        # --- Стандартна розсилка ---
         if send_all:
             ids_func = get_all_staff_user_ids
         elif send_shift:
@@ -374,6 +404,7 @@ def schedule_general_reminders(main_loop):
             ids_func = lambda _username=_username: get_staff_user_ids_by_username(_username)
         else:
             continue
+
         try:
             scheduler.add_job(
                 run_async_job,
@@ -387,51 +418,6 @@ def schedule_general_reminders(main_loop):
             )
         except Exception as e:
             print(f"[ERROR][schedule_general_reminders] Exception при add_job: {e}")
-
-def refresh_general_reminders():
-    loop = asyncio.get_event_loop()
-    schedule_general_reminders(loop)
-scheduler.add_job(
-    refresh_general_reminders,
-    'interval',
-    minutes=10,
-    id="refresh-general-reminders"
-)
-
-def aggregate_tasks(records, today, block_num, user_id):
-    """
-    Агрегує завдання користувача для обраного блоку.
-    Повертає: {(task, desc, block): {'done_cols': [...], 'row_idxs': [...], 'reminders': [(time, reminder, ..., ...)]}}
-    """
-    agg = {}
-    for idx, row in enumerate(records):
-        if (
-            str(row.get("Дата")) == today and
-            str(row.get("Блок")) == str(block_num) and
-            str(row.get("Telegram ID")) == str(user_id)
-        ):
-            task = row.get("Завдання") or ""
-            desc = row.get("Опис", "")
-            block = row.get("Блок")
-            key = (task, desc, block)
-            done_cols = []
-            reminders = []
-            times = [tm.strip() for tm in (row.get("Час") or "").split(",") if tm.strip()]
-            for i, tm in enumerate(times):
-                col = "Виконано" if i == 0 else f"Виконано ({i+1})"
-                val = (row.get(col) or "").strip().upper()
-                done_cols.append(val == "TRUE")
-                reminders.append((tm, row.get("Нагадування", ""), idx + 2, col))
-            if not times:
-                # якщо немає часу — лише один done
-                val = (row.get("Виконано") or "").strip().upper()
-                done_cols.append(val == "TRUE")
-            agg[key] = {
-                'done_cols': done_cols,
-                'row_idxs': [idx + 2],  # номер рядка для update_cell
-                'reminders': reminders
-            }
-    return agg
 
 # --- Меню ---
 user_menu = types.ReplyKeyboardMarkup(

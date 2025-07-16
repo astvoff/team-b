@@ -396,22 +396,40 @@ def schedule_general_reminders(main_loop):
         except Exception as e:
             continue
 
-        # --- Якщо вказано БЛОК — розсилаємо тільки тому, хто на цьому блоці сьогодні ---
-        if block_num:
-            try:
-                scheduler.add_job(
-                    run_block_async_job,
-                    'cron',
-                    day_of_week=weekday_num,
-                    hour=hour,
-                    minute=minute,
-                    args=[block_num, text],
-                    id=f"block-general-{block_num}-{day}-{hour}-{minute}",
-                    replace_existing=True
-                )
-            except Exception as e:
-                print(f"[ERROR][schedule_general_reminders][block] Exception при add_job: {e}")
-            continue
+        # --- Якщо вказано Завдання — розсилаємо тільки тому, хто на цьому блоці сьогодні ---
+       task_name = str(row.get('Завдання', '')).strip()
+if task_name:
+    def run_task_async_job(task_name=task_name, text=text):
+        try:
+            # 1. Знаходимо відповідального за це завдання сьогодні
+            today = get_today()
+            records = day_sheet.get_all_records()
+            for rec in records:
+                if (str(rec.get("Дата")) == today and
+                    (rec.get("Завдання") or "").strip().lower() == task_name.strip().lower() and
+                    rec.get("Telegram ID")):
+                    user_id = int(rec.get("Telegram ID"))
+                    asyncio.run_coroutine_threadsafe(
+                        send_general_reminder(text, [user_id]),
+                        main_loop
+                    )
+                    break
+        except Exception as e:
+            print(f"[ERROR][run_task_async_job] Exception: {e}")
+
+    try:
+        scheduler.add_job(
+            run_task_async_job,
+            'cron',
+            day_of_week=weekday_num,
+            hour=hour,
+            minute=minute,
+            id=f"task-general-{task_name}-{day}-{hour}-{minute}",
+            replace_existing=True
+        )
+    except Exception as e:
+        print(f"[ERROR][schedule_general_reminders][task] Exception при add_job: {e}")
+    continue
 
         # --- Стандартна розсилка ---
         if send_all:

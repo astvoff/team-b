@@ -180,6 +180,17 @@ async def notify_admin_if_needed(user_id, row, task, reminder, block):
                 parse_mode="HTML"
             )
 
+user_menu = types.ReplyKeyboardMarkup(
+    keyboard=[
+        [types.KeyboardButton(text="Розпочати день")],
+        [types.KeyboardButton(text="Список моїх завдань"), types.KeyboardButton(text="Мої нагадування")],
+        [types.KeyboardButton(text="Створити нагадування"), types.KeyboardButton(text="Інформаційна база")],
+        [types.KeyboardButton(text="Завершити день")],
+        [types.KeyboardButton(text="Відмінити дію")]
+    ],
+    resize_keyboard=True
+)
+
 @dp.callback_query(F.data.startswith('done_'))
 async def done_callback(call: types.CallbackQuery):
     parts = call.data.split('_')
@@ -275,7 +286,6 @@ scheduler.add_job(
     id="refresh-block-tasks"
 )
 
-# --- Загальні нагадування (розсилка) ---
 # --- Загальні нагадування (розсилка) ---
 
 def get_all_staff_user_ids():

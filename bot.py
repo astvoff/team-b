@@ -752,7 +752,7 @@ async def select_block(message: types.Message):
 
     # 1. Призначити користувача на блок (записати в Google Sheets)
     await assign_user_to_block(block_num, user_id)
-    await asyncio.sleep(0.7)  # 0.5-1 секунду достатньо
+    await asyncio.sleep(0.7)  # 0.5-1 секунду достатньо для оновлення в Google Sheets
 
     # 2. Ще раз зчитати дані з таблиці (новий запис уже є!)
     records = day_sheet.get_all_records()
@@ -763,7 +763,7 @@ async def select_block(message: types.Message):
         await message.answer("Завдань не знайдено для цього блоку.", reply_markup=user_menu)
         return
 
-    # 4. Відправити всі завдання
+    # 4. Відправити всі завдання для блоку
     for (task, desc, block), data in agg.items():
         status_marks = " ".join(["✅" if d else "❌" for d in data['done_cols']])
         text = (
@@ -791,7 +791,7 @@ async def select_block(message: types.Message):
             reminders_text += f"— {tm}: {rem}\n"
         await message.answer(reminders_text, parse_mode="HTML", reply_markup=user_menu)
 
-    # 6. ОБОВʼЯЗКОВО: запланувати реальні job для нагадувань
+    # 6. Запланувати персональні нагадування для користувача по задачах блоку
     tasks = get_tasks_for_block(block_num, user_id)
     schedule_reminders_for_user(user_id, tasks)
 

@@ -800,8 +800,9 @@ async def select_block(message: types.Message):
             reminders_text += f"— {tm}: {rem}\n"
         await message.answer(reminders_text, parse_mode="HTML", reply_markup=user_menu)
 
+    # 6. ОБОВʼЯЗКОВО: запланувати реальні job для нагадувань
     tasks = get_tasks_for_block(block_num, user_id)
-        schedule_reminders_for_user(user_id, tasks)
+    schedule_reminders_for_user(user_id, tasks)
 
 @dp.callback_query(F.data.startswith('task_done_'))
 async def mark_task_done_callback(call: types.CallbackQuery):

@@ -744,29 +744,18 @@ async def choose_blocks_count(message: types.Message):
     )
     await message.answer("Оберіть кількість блоків на сьогодні:", reply_markup=kb)
 
-@dp.message(F.text.in_(['6', '7', '8', '9']))
-async def on_blocks_count_chosen(message: types.Message):
-    blocks_count = message.text.strip()
-    copy_template_blocks_to_today(blocks_count)
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[[types.KeyboardButton(text=f"{b} блок")] for b in get_blocks_for_today()] +
-                 [[types.KeyboardButton(text="Відмінити дію")]],
-        resize_keyboard=True
-    )
-    await message.answer(f"Оберіть свій блок:", reply_markup=kb)
-
 @dp.message(F.text.regexp(r'^\d+ блок$'))
 async def select_block(message: types.Message):
     block_num = message.text.split()[0]
     user_id = message.from_user.id
     today = get_today()
 
-   # 1. Призначити користувача на блок (записати в Google Sheets)
-await assign_user_to_block(block_num, user_id)
-await asyncio.sleep(0.7)  # 0.5-1 секунду достатньо
+    # 1. Призначити користувача на блок (записати в Google Sheets)
+    await assign_user_to_block(block_num, user_id)
+    await asyncio.sleep(0.7)  # 0.5-1 секунду достатньо
 
-# 2. Ще раз зчитати дані з таблиці (новий запис уже є!)
-records = day_sheet.get_all_records()
+    # 2. Ще раз зчитати дані з таблиці (новий запис уже є!)
+    records = day_sheet.get_all_records()
 
     # 3. Агрегуємо завдання для юзера по цьому блоку
     agg = aggregate_tasks(records, today, block_num, user_id)

@@ -33,8 +33,8 @@ load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 SHEET_KEY = os.getenv('SHEET_KEY')
 UA_TZ = timezone(timedelta(hours=3))  # Київ
-REMINDER_REPEAT_MINUTES = 20
-ADMIN_NOTIFY_MINUTES = 30
+REMINDER_REPEAT_MINUTES = 5
+ADMIN_NOTIFY_MINUTES = 7
 ADMIN_IDS = [438830182]
 logging.basicConfig(level=logging.INFO)
 
@@ -164,11 +164,11 @@ async def repeat_reminder_if_needed(user_id, row, task, reminder, block):
         )
 
 async def notify_admin_if_needed(user_id, row, task, reminder, block):
-    print(f"[DEBUG][notify_admin_if_needed] {user_id=}, {row=}, {task=}")
     value = day_sheet.cell(row, 10).value
-    print(f"[DEBUG][notify_admin_if_needed] value={value}")
+    print(f"[DEBUG][notify_admin_if_needed] value={value}")  # ЛОГ ДЛЯ ДЕБАГУ
     if value != "TRUE":
         name = get_staff_name_by_id(user_id)
+        print(f"[ADMIN ALERT] Відправляю адміну {ADMIN_IDS} про задачу {task}")
         for admin_id in ADMIN_IDS:
             await bot.send_message(
                 admin_id,

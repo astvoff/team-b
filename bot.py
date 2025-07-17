@@ -33,8 +33,8 @@ load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 SHEET_KEY = os.getenv('SHEET_KEY')
 UA_TZ = timezone(timedelta(hours=3))  # Київ
-REMINDER_REPEAT_MINUTES = 5
-ADMIN_NOTIFY_MINUTES = 7
+REMINDER_REPEAT_MINUTES = 40
+ADMIN_NOTIFY_MINUTES = 60
 ADMIN_IDS = [438830182]
 logging.basicConfig(level=logging.INFO)
 
